@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -219,6 +219,7 @@ public static class AVDumpHelper
                 "--Consumers=ED2K",
                 $"--Auth={settings.AniDb.Username.Trim()}:{settings.AniDb.AVDumpKey?.Trim()}",
                 $"--LPort={settings.AniDb.AVDumpClientPort}",
+                "--PrintEd2kLink=true",
                 filePath
             );
             subProcess.OutputDataReceived += onStdOutData;
