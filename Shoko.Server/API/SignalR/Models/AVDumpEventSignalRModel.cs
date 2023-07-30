@@ -29,6 +29,9 @@ public class AVDumpMessageEventSignalRModel
     public string? Message { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public string? ErrorMessage { get; set; }
+
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public string? ExceptionStackTrace { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
@@ -49,6 +52,7 @@ public class AVDumpMessageEventSignalRModel
         Progress = eventArgs.Progress;
         Success = eventArgs.Success;
         Message = eventArgs.Message;
+        ErrorMessage = eventArgs.ErrorMessage;
         ExceptionStackTrace = eventArgs.Exception?.StackTrace;
         StartedAt = eventArgs.StartedAt;
         SentAt = eventArgs.SentAt;

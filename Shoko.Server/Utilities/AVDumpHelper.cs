@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -229,7 +229,7 @@ public static class AVDumpHelper
             }
 
             // Report the results.
-            ShokoEventHandler.Instance.OnAVDumpEnd(filePath, videoId, commandId, session.StartedAt, endedAt, success, stdOut);
+            ShokoEventHandler.Instance.OnAVDumpEnd(filePath, videoId, commandId, session.StartedAt, endedAt, success, stdOut, stdErr);
 
             // Return the output as a single string for API v1 consumption.
             return stdOut;

@@ -19,6 +19,8 @@ namespace Shoko.Plugin.Abstractions
 
         public string Message { get; }
 
+        public string ErrorMessage { get; }
+
         public Exception Exception { get; }
 
         public DateTime? StartedAt { get; }
@@ -55,7 +57,7 @@ namespace Shoko.Plugin.Abstractions
             SentAt = DateTime.UtcNow;
         }
 
-        public AVDumpMessageEventArgs(string filePath, int videoId, int? commandId, DateTime startedAt, DateTime endedAt, bool success, string message)
+        public AVDumpMessageEventArgs(string filePath, int videoId, int? commandId, DateTime startedAt, DateTime endedAt, bool success, string message, string errorMessage)
         {
             FilePath = filePath;
             VideoID = videoId;
@@ -64,6 +66,8 @@ namespace Shoko.Plugin.Abstractions
             Progress = 100;
             Success = success;
             Message = message;
+            if (!string.IsNullOrWhiteSpace(errorMessage))
+                ErrorMessage = errorMessage;
             StartedAt = startedAt;
             EndedAt = endedAt;
         }
