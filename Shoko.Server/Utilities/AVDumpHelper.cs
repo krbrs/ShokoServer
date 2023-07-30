@@ -41,6 +41,8 @@ public static class AVDumpHelper
 
     private static Regex InvalidCredentialsRegex = new Regex(@"\s+\(WrongUsernameOrApiKey\)$", RegexOptions.Compiled);
 
+    private static Regex AnidbCreqRegex = new Regex(@"^\s*ACreq\(Done:\s+(?<done>\d+)\s+Failed:\s+(?<failed>\d+)\s+Pending:\s+(?<pending>\d+)\)\s*$", RegexOptions.Compiled);
+
     private static readonly Logger logger = LogManager.GetCurrentClassLogger();
 
     private static object _prepareLock = new();
@@ -166,8 +168,8 @@ public static class AVDumpHelper
                     return;
                 }
 
-                // Don't display seperators or the summary in the output.
-                if (SeperatorRegex.IsMatch(eventArgs.Data) || SummaryRegex.IsMatch(eventArgs.Data))
+                // Don't display seperators, the summary, or creq updates in the output for now.
+                if (SeperatorRegex.IsMatch(eventArgs.Data) || SummaryRegex.IsMatch(eventArgs.Data) || AnidbCreqRegex.IsMatch(eventArgs.Data))
                     return;
 
                 // Calculate progress.
