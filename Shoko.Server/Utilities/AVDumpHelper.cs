@@ -39,6 +39,8 @@ public static class AVDumpHelper
 
     private static Regex SeperatorRegex = new Regex(@"^\s*\-+\s*$", RegexOptions.Compiled);
 
+    private static Regex InvalidCredentialsRegex = new Regex(@"\s+\(WrongUsernameOrApiKey\)$", RegexOptions.Compiled);
+
     private static readonly Logger logger = LogManager.GetCurrentClassLogger();
 
     private static object _prepareLock = new();
@@ -183,6 +185,10 @@ public static class AVDumpHelper
                     return;
                 }
 
+                // Emit an invalid credentials event if we couldn't authenticate with AniDB.
+                if (InvalidCredentialsRegex.IsMatch(eventArgs.Data))
+                    ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.InvalidCredentials);
+
                 // Append everything else to the outputs. We use \r\n for v1 compatibility.
                 stdOutBuilder.Append(eventArgs.Data + "\n");
                 ShokoEventHandler.Instance.OnAVDumpMessage(filePath, videoId, commandId, AVDumpMessageType.Message, eventArgs.Data, session.Progress);
@@ -193,6 +199,14 @@ public static class AVDumpHelper
                 // Also ignore any empty lines sent to standard error.
                 if (string.IsNullOrWhiteSpace(eventArgs.Data))
                     return;
+
+                // Emit an invalid credentials event if we couldn't authenticate with AniDB.
+                //
+                // This check is repeated for both std out and std err since they changed it
+                // in avdump3 to print on std out, but they _might_ change it back to print
+                // on std err for all we know, so now we have a mostly unneeded check.
+                if (InvalidCredentialsRegex.IsMatch(eventArgs.Data))
+                    ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.InvalidCredentials);
 
                 stdErrBuilder.Append(eventArgs.Data.Trim() + "\n");
                 ShokoEventHandler.Instance.OnAVDumpMessage(filePath, videoId, commandId, AVDumpMessageType.Error, eventArgs.Data, session.Progress);
