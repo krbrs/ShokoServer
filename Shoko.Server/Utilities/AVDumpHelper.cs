@@ -29,6 +29,7 @@ public static class AVDumpHelper
     public static readonly string ArchivePath = Path.Combine(Utils.ApplicationPath, "avdump.zip");
 
     public const string AVDumpURL = @"https://cdn.anidb.net/client/avdump3/avdump3_8293_stable.zip";
+    public const string AVDumpVersion = @"avdump3_8293_stable";
 
     public static readonly string AVDumpExecutable = Path.Combine(WorkingDirectory,  Utils.IsRunningOnLinuxOrMac() ? "AVDump3CL" : "AVDump3CL.exe");
 
@@ -253,6 +254,7 @@ public static class AVDumpHelper
             if (success) {
                 // TODO: Do we want to store the last stdout/stderr in the database?
                 video.LastAVDumped = endedAt;
+                video.LastAVDumpVersion = AVDumpVersion;
                 RepoFactory.VideoLocal.Save(video);
             }
 

@@ -43,6 +43,12 @@ public class SVR_VideoLocal : VideoLocal, IHash
     /// </summary>
     /// <value></value>
     public DateTime? LastAVDumped { get; set; }
+    
+    /// <summary>
+    /// The Version of AVDump from Last time we did a successful AVDump.
+    /// </summary>
+    /// <value></value>
+    public string LastAVDumpVersion { get; set; }
 
     #endregion
 

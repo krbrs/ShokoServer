@@ -27,5 +27,6 @@ public class VideoLocalMap : ClassMap<SVR_VideoLocal>
         Map(x => x.MediaSize).Not.Nullable();
         Map(x => x.MyListID).Not.Nullable();
         Map(x => x.LastAVDumped);
+        Map(x => x.LastAVDumpVersion);
     }
 }
