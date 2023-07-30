@@ -130,7 +130,7 @@ public static class AVDumpHelper
         if (string.IsNullOrWhiteSpace(settings.AniDb.AVDumpKey))
         {
             var message = "Missing AVDump API Key in the settings.";
-            ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.MissingApiKey);
+            ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpEventType.MissingApiKey);
             logger.Warn(message);
             return message;
         }
@@ -183,17 +183,17 @@ public static class AVDumpHelper
                         return;
 
                     session.Progress = currentProgress;
-                    ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpMessageType.Progress, null, session.Progress);
+                    ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpEventType.Progress, null, session.Progress);
                     return;
                 }
 
                 // Emit an invalid credentials event if we couldn't authenticate with AniDB.
                 if (InvalidCredentialsRegex.IsMatch(eventArgs.Data))
-                    ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.InvalidCredentials);
+                    ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpEventType.InvalidCredentials);
 
                 // Append everything else to the outputs. We use \r\n for v1 compatibility.
                 stdOutBuilder.Append(eventArgs.Data + "\n");
-                ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpMessageType.Message, eventArgs.Data, session.Progress);
+                ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpEventType.Message, eventArgs.Data);
             };
             DataReceivedEventHandler onStdErrData = (sender, eventArgs) =>
             {
@@ -208,10 +208,10 @@ public static class AVDumpHelper
                 // in avdump3 to print on std out, but they _might_ change it back to print
                 // on std err for all we know, so now we have a mostly unneeded check.
                 if (InvalidCredentialsRegex.IsMatch(eventArgs.Data))
-                    ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.InvalidCredentials);
+                    ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpEventType.InvalidCredentials);
 
                 stdErrBuilder.Append(eventArgs.Data.Trim() + "\n");
-                ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpMessageType.Error, eventArgs.Data, session.Progress);
+                ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpEventType.Error, eventArgs.Data);
             };
 
             // Prepare the sub-process.
@@ -288,7 +288,7 @@ public static class AVDumpHelper
                 return true;
             }
 
-            ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.InstallingAVDump);
+            ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpEventType.InstallingAVDump);
 
             // Download the archive if it's not available locally.
             if (!File.Exists(ArchivePath))
@@ -354,7 +354,7 @@ public static class AVDumpHelper
                 // eh we tried
             }
 
-            ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.InstalledAVDump);
+            ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpEventType.InstalledAVDump);
             return true;
         }
     }
@@ -394,7 +394,7 @@ public static class AVDumpHelper
 
     public class AVDumpSession
     {
-        public string FilePath { get; }
+        public string Path { get; }
 
         public int VideoID { get; }
 
@@ -406,7 +406,7 @@ public static class AVDumpHelper
 
         public AVDumpSession(string filePath, int videoId, int? commandId)
         {
-            FilePath = filePath;
+            Path = filePath;
             VideoID = videoId;
             CommandID = commandId;
             StartedAt = DateTime.UtcNow;

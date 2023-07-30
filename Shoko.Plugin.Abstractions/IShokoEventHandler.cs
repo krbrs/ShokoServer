@@ -56,6 +56,6 @@ namespace Shoko.Plugin.Abstractions
         /// <summary>
         /// Fired when an avdump event occurs.
         /// </summary>
-        event EventHandler<AVDumpMessageEventArgs> AVDumpMessage;
+        event EventHandler<AVDumpEventArgs> AVDumpEvent;
     }
 }

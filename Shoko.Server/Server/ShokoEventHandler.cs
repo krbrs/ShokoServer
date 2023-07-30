@@ -22,7 +22,7 @@ public class ShokoEventHandler : IShokoEventHandler
     public event EventHandler<SeriesInfoUpdatedEventArgs> SeriesUpdated;
     public event EventHandler<EpisodeInfoUpdatedEventArgs> EpisodeUpdated;
     public event EventHandler<SettingsSavedEventArgs> SettingsSaved;
-    public event EventHandler<AVDumpMessageEventArgs> AVDumpMessage;
+    public event EventHandler<AVDumpEventArgs> AVDumpEvent;
 
     public event EventHandler Start;
     public event EventHandler<CancelEventArgs> Shutdown;
@@ -143,32 +143,32 @@ public class ShokoEventHandler : IShokoEventHandler
 
     public void OnAVDumpStart(string filePath, int videoId, int? commandId, DateTime startedAt)
     {
-        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt));
+        AVDumpEvent?.Invoke(null, new(filePath, videoId, commandId, startedAt));
     }
 
     public void OnAVDumpEnd(string filePath, int videoId, int? commandId, DateTime startedAt, DateTime endedAt, bool success, string message, string errorMessage)
     {
-        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt, endedAt, success, message, errorMessage));
+        AVDumpEvent?.Invoke(null, new(filePath, videoId, commandId, startedAt, endedAt, success, message, errorMessage));
     }
 
-    public void OnAVDumpMessage(AVDumpMessageType messageType, string message = null)
+    public void OnAVDumpMessage(AVDumpEventType messageType, string message = null)
     {
-        AVDumpMessage?.Invoke(null, new(messageType, message));
+        AVDumpEvent?.Invoke(null, new(messageType, message));
     }
 
-    public void OnAVDumpMessage(int videoId, int? commandId, AVDumpMessageType messageType, string message, double? progress = null)
+    public void OnAVDumpMessage(int videoId, int? commandId, AVDumpEventType messageType, string message, double? progress = null)
     {
-        AVDumpMessage?.Invoke(null, new(videoId, commandId, messageType, message, progress));
+        AVDumpEvent?.Invoke(null, new(videoId, commandId, messageType, message, progress));
     }
 
     public void OnAVDumpInstallException(Exception ex)
     {
-        AVDumpMessage?.Invoke(null, new(ex));
+        AVDumpEvent?.Invoke(null, new(ex));
     }
 
     public void OnAVDumpGenericException(string filePath, int videoId, int? commandId, DateTime startedAt, Exception ex)
     {
-        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt, ex));
+        AVDumpEvent?.Invoke(null, new(filePath, videoId, commandId, startedAt, ex));
     }
 
     public void OnStart()

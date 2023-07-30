@@ -44,29 +44,29 @@ public class CommandRequest_AVDumpFile : CommandRequestImplementation
 
     protected override void Process()
     {
-        EventHandler<AVDumpMessageEventArgs> eventHandler = (_, eventArgs) =>
+        EventHandler<AVDumpEventArgs> eventHandler = (_, eventArgs) =>
         {
             // Guard against concurrent dumps.
             if (eventArgs.VideoID != VideoLocalID || eventArgs.CommandID != CommandRequestID)
                 return;
             switch (eventArgs.Type)
             {
-                case AVDumpMessageType.Started:
+                case AVDumpEventType.Started:
                     OnStart();
                     break;
-                case AVDumpMessageType.Progress:
+                case AVDumpEventType.Progress:
                     OnProgressUpdate(eventArgs.Progress.Value);
                     break;
             }
         };
 
         try {
-            ShokoEventHandler.Instance.AVDumpMessage += eventHandler;
+            ShokoEventHandler.Instance.AVDumpEvent += eventHandler;
             Result = AVDumpHelper.DumpFile(FilePath, Video, CommandRequestID);
         }
         finally
         {
-            ShokoEventHandler.Instance.AVDumpMessage -= eventHandler;
+            ShokoEventHandler.Instance.AVDumpEvent -= eventHandler;
         }
     }
 

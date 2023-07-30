@@ -14,23 +14,23 @@ public class AVDumpEmitter : BaseEmitter, IDisposable
     public AVDumpEmitter(IHubContext<AggregateHub> hub, IShokoEventHandler events) : base(hub)
     {
         EventHandler = events;
-        EventHandler.AVDumpMessage += OnAVDumpMessage;
+        EventHandler.AVDumpEvent += OnAVDumpEvent;
     }
 
     public void Dispose()
     {
-        EventHandler.AVDumpMessage -= OnAVDumpMessage;
+        EventHandler.AVDumpEvent -= OnAVDumpEvent;
     }
 
-    private async void OnAVDumpMessage(object sender, AVDumpMessageEventArgs eventArgs)
+    private async void OnAVDumpEvent(object sender, AVDumpEventArgs eventArgs)
     {
-        await SendAsync("Message", new AVDumpMessageEventSignalRModel(eventArgs));
+        await SendAsync("Event", new AVDumpEventSignalRModel(eventArgs));
     }
 
     public override object GetInitialMessage()
     {
         return AVDumpHelper.GetActiveSessions()
-            .Select(session => new AVDumpMessageEventSignalRModel(session))
+            .Select(session => new AVDumpEventSignalRModel(session))
             .ToList();
     }
 }

@@ -6,10 +6,10 @@ using Shoko.Plugin.Abstractions;
 #nullable enable
 namespace Shoko.Server.API.SignalR.Models;
 
-public class AVDumpMessageEventSignalRModel
+public class AVDumpEventSignalRModel
 {
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
-    public string FilePath { get; set; }
+    public string Path { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public int? VideoID { get; set; }
@@ -18,7 +18,7 @@ public class AVDumpMessageEventSignalRModel
     public int? CommandID { get; set; }
 
     [JsonConverter(typeof(StringEnumConverter))]
-    public AVDumpMessageType Type { get; set; }
+    public AVDumpEventType Type { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public double? Progress { get; set; }
@@ -41,9 +41,9 @@ public class AVDumpMessageEventSignalRModel
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public DateTime? EndedAt { get; set; }
 
-    public AVDumpMessageEventSignalRModel(AVDumpMessageEventArgs eventArgs)
+    public AVDumpEventSignalRModel(AVDumpEventArgs eventArgs)
     {
-        FilePath = eventArgs.FilePath;
+        Path = eventArgs.Path;
         VideoID = eventArgs.VideoID;
         CommandID = eventArgs.CommandID;
         Type = eventArgs.Type;
@@ -56,12 +56,12 @@ public class AVDumpMessageEventSignalRModel
         EndedAt = eventArgs.EndedAt;
     }
 
-    public AVDumpMessageEventSignalRModel(AVDumpHelper.AVDumpSession session)
+    public AVDumpEventSignalRModel(AVDumpHelper.AVDumpSession session)
     {
-        FilePath = session.FilePath;
+        Path = session.Path;
         VideoID = session.VideoID;
         CommandID = session.CommandID;
-        Type = AVDumpMessageType.Running;
+        Type = AVDumpEventType.Running;
         Progress = session.Progress;
         StartedAt = session.StartedAt;
         SentAt = DateTime.UtcNow;
