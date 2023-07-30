@@ -244,6 +244,11 @@ public static class AVDumpHelper
                 video.LastAVDumpVersion = AVDumpVersion;
                 RepoFactory.VideoLocal.Save(video);
             }
+            // Print errors to log file if it was unsuccessful.
+            else
+            {
+                logger.Warn($"The dumping of \"{filePath}\" was not successful.\nStandard Output:\n{stdOut}{(stdErr.Length > 0 ? $"\nStandard Error:\n{stdErr}" : "")}");
+            }
 
             // Report the results.
             ShokoEventHandler.Instance.OnAVDumpEnd(filePath, videoId, commandId, session.StartedAt, endedAt, success, stdOut, stdErr);
