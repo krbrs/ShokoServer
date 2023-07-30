@@ -659,10 +659,13 @@ public class FileController : BaseController
             command.BubbleExceptions = true;
             command.ProcessCommand();
             var result = command.Result;
+            // Note: We don't actually use the link from the output, since
+            // AVDump3 is known to produce invalid links when ran against a
+            // symbolic link. So instead we construct it ourselves.
             return new AVDumpResult
             {
                 FullOutput = result,
-                Ed2k = result.Split('\n').FirstOrDefault(s => s.Trim().Contains("ed2k://")),
+                Ed2k = result.Contains("ed2k://") ? $"ed2k://|file|{Path.GetFileName(filePath)}|{file.FileSize}|{file.Hash}|/" : null,
             };
         }
 
