@@ -23,9 +23,6 @@ public class AVDumpMessageEventSignalRModel
     public double? Progress { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
-    public bool? Success { get; set; }
-
-    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public string? Message { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
@@ -50,7 +47,6 @@ public class AVDumpMessageEventSignalRModel
         CommandID = eventArgs.CommandID;
         Type = eventArgs.Type;
         Progress = eventArgs.Progress;
-        Success = eventArgs.Success;
         Message = eventArgs.Message;
         ErrorMessage = eventArgs.ErrorMessage;
         ExceptionStackTrace = eventArgs.Exception?.StackTrace;

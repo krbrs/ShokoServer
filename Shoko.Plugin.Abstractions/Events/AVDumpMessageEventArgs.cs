@@ -15,8 +15,6 @@ namespace Shoko.Plugin.Abstractions
 
         public double? Progress { get; }
 
-        public bool? Success { get; }
-
         public string Message { get; }
 
         public string ErrorMessage { get; }
@@ -62,9 +60,8 @@ namespace Shoko.Plugin.Abstractions
             FilePath = filePath;
             VideoID = videoId;
             CommandID = commandId;
-            Type = AVDumpMessageType.Ended;
+            Type = success ? AVDumpMessageType.Success : AVDumpMessageType.Failure;
             Progress = 100;
-            Success = success;
             Message = message;
             if (!string.IsNullOrWhiteSpace(errorMessage))
                 ErrorMessage = errorMessage;
@@ -120,13 +117,19 @@ namespace Shoko.Plugin.Abstractions
         Started,
 
         /// <summary>
-        /// A message indicating an AVDump session have ended for a given file
-        /// and/or command request.
+        /// A message indicating an AVDump session have ended with a success for
+        /// a given file and/or command request.
         /// </summary>
-        Ended,
+        Success,
 
         /// <summary>
-        /// A message only sent from th
+        /// A message indicating an AVDump session have ended with a failure for
+        /// a given file and/or command request.
+        /// </summary>
+        Failure,
+
+        /// <summary>
+        /// A message sent for any running sessions to new SignalR clients.
         /// </summary>
         Running,
 
@@ -137,10 +140,14 @@ namespace Shoko.Plugin.Abstractions
         GenericException,
 
         /// <summary>
-        /// A generic .NET exception occured while trying to run the AVDump
-        /// session and the session have ended as a result.
+        /// The UDP AVDump Api Key is missing from the settings.
         /// </summary>
-        InstallException,
+        MissingApiKey,
+
+        /// <summary>
+        /// Unable to authenticate with Anidb.
+        /// </summary>
+        InvalidCredentials,
 
         /// <summary>
         /// A message indicating we're trying to install AVDump before starting
@@ -155,13 +162,9 @@ namespace Shoko.Plugin.Abstractions
         InstalledAVDump,
 
         /// <summary>
-        /// The UDP AVDump Api Key is missing from the settings.
+        /// A generic .NET exception occured while trying to run the AVDump
+        /// session and the session have ended as a result.
         /// </summary>
-        MissingApiKey,
-
-        /// <summary>
-        /// Unable to authenticate with Anidb.
-        /// </summary>
-        InvalidCredentials,
+        InstallException,
     }
 }
