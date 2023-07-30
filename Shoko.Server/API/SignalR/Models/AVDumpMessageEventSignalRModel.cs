@@ -55,14 +55,14 @@ public class AVDumpMessageEventSignalRModel
         EndedAt = eventArgs.EndedAt;
     }
 
-    public AVDumpMessageEventSignalRModel(string filePath, int videoId, int? commandId, DateTime startedAt, double progress)
+    public AVDumpMessageEventSignalRModel(AVDumpHelper.AVDumpSession session)
     {
-        FilePath = filePath;
-        VideoID = videoId;
-        CommandID = commandId;
+        FilePath = session.FilePath;
+        VideoID = session.VideoID;
+        CommandID = session.CommandID;
         Type = AVDumpMessageType.Running;
-        Progress = progress;
-        StartedAt = startedAt;
+        Progress = session.Progress;
+        StartedAt = session.StartedAt;
         SentAt = DateTime.UtcNow;
     }
 }
