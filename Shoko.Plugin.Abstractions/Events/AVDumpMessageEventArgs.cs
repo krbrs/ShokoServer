@@ -7,7 +7,7 @@ namespace Shoko.Plugin.Abstractions
     {
         public string FilePath { get; }
 
-        public int VideoID { get; }
+        public int? VideoID { get; }
 
         public int? CommandID { get; }
 
@@ -29,7 +29,6 @@ namespace Shoko.Plugin.Abstractions
 
         public AVDumpMessageEventArgs(AVDumpMessageType messageType, string message = null)
         {
-            VideoID = 0;
             Type = messageType;
             Message = message;
         }
@@ -44,9 +43,8 @@ namespace Shoko.Plugin.Abstractions
             StartedAt = startedAt;
         }
 
-        public AVDumpMessageEventArgs(string filePath, int videoId, int? commandId, AVDumpMessageType messageType, string message, double? progress = null)
+        public AVDumpMessageEventArgs(int videoId, int? commandId, AVDumpMessageType messageType, string message, double? progress = null)
         {
-            FilePath = filePath;
             VideoID = videoId;
             CommandID = commandId;
             Type = messageType;
@@ -84,7 +82,6 @@ namespace Shoko.Plugin.Abstractions
 
         public AVDumpMessageEventArgs(Exception ex)
         {
-            VideoID = 0;
             Type = AVDumpMessageType.InstallException;
             Message = ex.Message;
             Exception = ex;

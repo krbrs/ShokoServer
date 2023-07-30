@@ -11,7 +11,8 @@ public class AVDumpMessageEventSignalRModel
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public string FilePath { get; set; }
 
-    public int VideoID { get; set; }
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public int? VideoID { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public int? CommandID { get; set; }

@@ -183,7 +183,7 @@ public static class AVDumpHelper
                         return;
 
                     session.Progress = currentProgress;
-                    ShokoEventHandler.Instance.OnAVDumpMessage(filePath, videoId, commandId, AVDumpMessageType.Progress, null, session.Progress);
+                    ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpMessageType.Progress, null, session.Progress);
                     return;
                 }
 
@@ -193,7 +193,7 @@ public static class AVDumpHelper
 
                 // Append everything else to the outputs. We use \r\n for v1 compatibility.
                 stdOutBuilder.Append(eventArgs.Data + "\n");
-                ShokoEventHandler.Instance.OnAVDumpMessage(filePath, videoId, commandId, AVDumpMessageType.Message, eventArgs.Data, session.Progress);
+                ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpMessageType.Message, eventArgs.Data, session.Progress);
             };
             DataReceivedEventHandler onStdErrData = (sender, eventArgs) =>
             {
@@ -211,7 +211,7 @@ public static class AVDumpHelper
                     ShokoEventHandler.Instance.OnAVDumpMessage(AVDumpMessageType.InvalidCredentials);
 
                 stdErrBuilder.Append(eventArgs.Data.Trim() + "\n");
-                ShokoEventHandler.Instance.OnAVDumpMessage(filePath, videoId, commandId, AVDumpMessageType.Error, eventArgs.Data, session.Progress);
+                ShokoEventHandler.Instance.OnAVDumpMessage(videoId, commandId, AVDumpMessageType.Error, eventArgs.Data, session.Progress);
             };
 
             // Prepare the sub-process.
