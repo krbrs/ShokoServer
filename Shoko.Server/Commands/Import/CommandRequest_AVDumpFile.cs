@@ -24,7 +24,8 @@ public class CommandRequest_AVDumpFile : CommandRequestImplementation
     public int VideoLocalID { get; set; }
 
     [XmlIgnore] [JsonIgnore]
-    private SVR_VideoLocal Video;
+    private SVR_VideoLocal Video =>
+        RepoFactory.VideoLocal.GetByID(VideoLocalID);
 
     [XmlIgnore] [JsonIgnore]
     public string Result { get; protected set; } = string.Empty;
@@ -115,7 +116,6 @@ public class CommandRequest_AVDumpFile : CommandRequestImplementation
         // populate the fields
         FilePath = TryGetProperty(docCreator, "CommandRequest_AVDumpFile", "FilePath");
         VideoLocalID = int.Parse(TryGetProperty(docCreator, "CommandRequest_AVDumpFile", "VideoLocalID"));
-        Video = RepoFactory.VideoLocal.GetByID(VideoLocalID);
         return true;
     }
 
