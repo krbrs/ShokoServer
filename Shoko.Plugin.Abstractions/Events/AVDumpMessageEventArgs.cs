@@ -13,7 +13,7 @@ namespace Shoko.Plugin.Abstractions
 
         public AVDumpMessageType Type { get; }
 
-        public double Progress { get; }
+        public double? Progress { get; }
 
         public bool? Success { get; }
 
@@ -21,9 +21,18 @@ namespace Shoko.Plugin.Abstractions
 
         public Exception Exception { get; }
 
-        public DateTime StartedAt { get; }
+        public DateTime? StartedAt { get; }
+
+        public DateTime? SentAt { get; }
 
         public DateTime? EndedAt { get; }
+
+        public AVDumpMessageEventArgs(AVDumpMessageType messageType, string message = null)
+        {
+            VideoID = 0;
+            Type = messageType;
+            Message = message;
+        }
 
         public AVDumpMessageEventArgs(string filePath, int videoId, int? commandId, DateTime startedAt)
         {
@@ -35,7 +44,7 @@ namespace Shoko.Plugin.Abstractions
             StartedAt = startedAt;
         }
 
-        public AVDumpMessageEventArgs(string filePath, int videoId, int? commandId, DateTime startedAt, AVDumpMessageType messageType, string message, double progress = 100)
+        public AVDumpMessageEventArgs(string filePath, int videoId, int? commandId, AVDumpMessageType messageType, string message, double? progress = null)
         {
             FilePath = filePath;
             VideoID = videoId;
@@ -43,7 +52,7 @@ namespace Shoko.Plugin.Abstractions
             Type = messageType;
             Progress = progress;
             Message = message;
-            StartedAt = startedAt;
+            SentAt = DateTime.UtcNow;
         }
 
         public AVDumpMessageEventArgs(string filePath, int videoId, int? commandId, DateTime startedAt, DateTime endedAt, bool success, string message)
@@ -70,6 +79,14 @@ namespace Shoko.Plugin.Abstractions
             Exception = ex;
             StartedAt = startedAt;
             EndedAt = DateTime.UtcNow;
+        }
+
+        public AVDumpMessageEventArgs(Exception ex)
+        {
+            VideoID = 0;
+            Type = AVDumpMessageType.InstallException;
+            Message = ex.Message;
+            Exception = ex;
         }
     }
 
@@ -114,6 +131,12 @@ namespace Shoko.Plugin.Abstractions
         /// session and the session have ended as a result.
         /// </summary>
         GenericException,
+
+        /// <summary>
+        /// A generic .NET exception occured while trying to run the AVDump
+        /// session and the session have ended as a result.
+        /// </summary>
+        InstallException,
 
         /// <summary>
         /// A message indicating we're trying to install AVDump before starting

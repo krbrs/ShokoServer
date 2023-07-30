@@ -1573,6 +1573,6 @@ public partial class ShokoServiceImplementation
             }
         );
         command.ProcessCommand();
-        return command.Result;
+        return command.Result.Replace("\n", "\r\n");
     }
 }

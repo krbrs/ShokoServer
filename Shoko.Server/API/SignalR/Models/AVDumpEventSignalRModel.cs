@@ -8,16 +8,19 @@ namespace Shoko.Server.API.SignalR.Models;
 
 public class AVDumpMessageEventSignalRModel
 {
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public string FilePath { get; set; }
 
     public int VideoID { get; set; }
 
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public int? CommandID { get; set; }
 
     [JsonConverter(typeof(StringEnumConverter))]
     public AVDumpMessageType Type { get; set; }
 
-    public double Progress { get; set; }
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public double? Progress { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public bool? Success { get; set; }
@@ -30,6 +33,9 @@ public class AVDumpMessageEventSignalRModel
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public DateTime? StartedAt { get; set; }
+
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public DateTime? SentAt { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public DateTime? EndedAt { get; set; }
@@ -45,6 +51,7 @@ public class AVDumpMessageEventSignalRModel
         Message = eventArgs.Message;
         ExceptionStackTrace = eventArgs.Exception?.StackTrace;
         StartedAt = eventArgs.StartedAt;
+        SentAt = eventArgs.SentAt;
         EndedAt = eventArgs.EndedAt;
     }
 
@@ -56,5 +63,6 @@ public class AVDumpMessageEventSignalRModel
         Type = AVDumpMessageType.Running;
         Progress = progress;
         StartedAt = startedAt;
+        SentAt = DateTime.UtcNow;
     }
 }

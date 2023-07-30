@@ -54,7 +54,7 @@ public class CommandRequest_AVDumpFile : CommandRequestImplementation
                     OnStart();
                     break;
                 case AVDumpMessageType.Progress:
-                    OnProgressUpdate(eventArgs.Progress);
+                    OnProgressUpdate(eventArgs.Progress.Value);
                     break;
                 case AVDumpMessageType.Ended:
                 case AVDumpMessageType.GenericException:

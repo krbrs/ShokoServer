@@ -151,9 +151,19 @@ public class ShokoEventHandler : IShokoEventHandler
         AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt, endedAt, success, message));
     }
 
-    public void OnAVDumpMessage(string filePath, int videoId, int? commandId, DateTime startedAt, AVDumpMessageType messageType, string message, double progress = 100)
+    public void OnAVDumpMessage(AVDumpMessageType messageType, string message = null)
     {
-        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt, messageType, message, progress));
+        AVDumpMessage?.Invoke(null, new(messageType, message));
+    }
+
+    public void OnAVDumpMessage(string filePath, int videoId, int? commandId, AVDumpMessageType messageType, string message, double? progress = null)
+    {
+        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, messageType, message, progress));
+    }
+
+    public void OnAVDumpInstallException(Exception ex)
+    {
+        AVDumpMessage?.Invoke(null, new(ex));
     }
 
     public void OnAVDumpGenericException(string filePath, int videoId, int? commandId, DateTime startedAt, Exception ex)
