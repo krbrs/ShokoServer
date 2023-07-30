@@ -56,10 +56,6 @@ public class CommandRequest_AVDumpFile : CommandRequestImplementation
                 case AVDumpMessageType.Progress:
                     OnProgressUpdate(eventArgs.Progress.Value);
                     break;
-                case AVDumpMessageType.Ended:
-                case AVDumpMessageType.GenericException:
-                    OnFinish();
-                    break;
             }
         };
 
@@ -94,18 +90,6 @@ public class CommandRequest_AVDumpFile : CommandRequestImplementation
             message = "AVDumping File: {0} — {1}%",
             queueState = QueueStateEnum.FileInfo,
             extraParams = new[] { FilePath, Math.Round(progress, 2).ToString() },
-        };
-    }
-
-    private void OnFinish()
-    {
-        if (Processor == null)
-            return;
-        Processor.QueueState = new()
-        {
-            message = "AVDumped File: {0}",
-            queueState = QueueStateEnum.FileInfo,
-            extraParams = new[] { FilePath },
         };
     }
 
