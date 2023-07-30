@@ -625,9 +625,12 @@ public class FileController : BaseController
     /// Run a file through AVDump and return the result.
     /// </summary>
     /// <param name="fileID">VideoLocal ID</param>
+    /// <param name="priority">Increase the priority to the max for the queued command.</param>
+    /// <param name="immediate">Immediately run the AVDump, without adding the command to the queue.</param>
     /// <returns></returns>
     [HttpPost("{fileID}/AVDump")]
-    public ActionResult<AVDumpResult> AvDumpFile([FromRoute] int fileID)
+    public ActionResult<AVDumpResult> AvDumpFile([FromRoute] int fileID, [FromQuery] bool priority = false,
+        [FromQuery] bool immediate = false)
     {
         var file = RepoFactory.VideoLocal.GetByID(fileID);
         if (file == null)
@@ -644,13 +647,30 @@ public class FileController : BaseController
         if (!ModelState.IsValid)
             return ValidationProblem(ModelState);
 
-        var result = AVDumpHelper.DumpFile(filePath).Replace("\r", "");
-
-        return new AVDumpResult()
+        var command = _commandFactory.Create<CommandRequest_AVDumpFile>(
+            c =>
+            {
+                c.VideoLocalID = file.VideoLocalID;
+                c.FilePath = filePath;
+            }
+        );
+        if (immediate)
         {
-            FullOutput = result,
-            Ed2k = result.Split('\n').FirstOrDefault(s => s.Trim().Contains("ed2k://")),
-        };
+            command.BubbleExceptions = true;
+            command.ProcessCommand();
+            var result = command.Result;
+            return new AVDumpResult
+            {
+                FullOutput = result,
+                Ed2k = result.Split('\n').FirstOrDefault(s => s.Trim().Contains("ed2k://")),
+            };
+        }
+
+        if (priority)
+            command.Priority = (int) CommandRequestPriority.Priority1;
+
+        command.Save();
+        return Ok();
     }
 
     /// <summary>

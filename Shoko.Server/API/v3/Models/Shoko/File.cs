@@ -88,6 +88,12 @@ public class File
     public DateTime? Imported { get; set; }
 
     /// <summary>
+    /// The last time we did a successful AVDump of the file.
+    /// </summary>
+    [JsonConverter(typeof(IsoDateTimeConverter))]
+    public DateTime? AVDumped { get; set; }
+
+    /// <summary>
     /// The file creation date of this file
     /// </summary>
     [JsonConverter(typeof(IsoDateTimeConverter))]
@@ -136,6 +142,7 @@ public class File
         Viewed = userRecord?.LastUpdated.ToUniversalTime();
         Watched = userRecord?.WatchedDate?.ToUniversalTime();
         Imported = file.DateTimeImported?.ToUniversalTime();
+        AVDumped = file.LastAVDumped?.ToUniversalTime();
         Created = file.DateTimeCreated.ToUniversalTime();
         Updated = file.DateTimeUpdated.ToUniversalTime();
         if (withXRefs)

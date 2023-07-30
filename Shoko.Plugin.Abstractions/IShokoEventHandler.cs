@@ -53,5 +53,9 @@ namespace Shoko.Plugin.Abstractions
         /// Fired when the core settings has been saved.
         /// </summary>
         event EventHandler<SettingsSavedEventArgs> SettingsSaved;
+        /// <summary>
+        /// Fired when an avdump event occurs.
+        /// </summary>
+        event EventHandler<AVDumpMessageEventArgs> AVDumpMessage;
     }
 }

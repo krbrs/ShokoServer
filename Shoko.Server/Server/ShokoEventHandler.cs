@@ -22,6 +22,7 @@ public class ShokoEventHandler : IShokoEventHandler
     public event EventHandler<SeriesInfoUpdatedEventArgs> SeriesUpdated;
     public event EventHandler<EpisodeInfoUpdatedEventArgs> EpisodeUpdated;
     public event EventHandler<SettingsSavedEventArgs> SettingsSaved;
+    public event EventHandler<AVDumpMessageEventArgs> AVDumpMessage;
 
     public event EventHandler Start;
     public event EventHandler<CancelEventArgs> Shutdown;
@@ -138,6 +139,26 @@ public class ShokoEventHandler : IShokoEventHandler
     public void OnSettingsSaved()
     {
         SettingsSaved?.Invoke(null, new SettingsSavedEventArgs());
+    }
+
+    public void OnAVDumpStart(string filePath, int videoId, int? commandId, DateTime startedAt)
+    {
+        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt));
+    }
+
+    public void OnAVDumpEnd(string filePath, int videoId, int? commandId, DateTime startedAt, DateTime endedAt, bool success, string message)
+    {
+        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt, endedAt, success, message));
+    }
+
+    public void OnAVDumpMessage(string filePath, int videoId, int? commandId, DateTime startedAt, AVDumpMessageType messageType, string message, double progress = 100)
+    {
+        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt, messageType, message, progress));
+    }
+
+    public void OnAVDumpGenericException(string filePath, int videoId, int? commandId, DateTime startedAt, Exception ex)
+    {
+        AVDumpMessage?.Invoke(null, new(filePath, videoId, commandId, startedAt, ex));
     }
 
     public void OnStart()
