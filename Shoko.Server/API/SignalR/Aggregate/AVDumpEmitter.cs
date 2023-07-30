@@ -30,7 +30,7 @@ public class AVDumpEmitter : BaseEmitter, IDisposable
     public override object GetInitialMessage()
     {
         return AVDumpHelper.GetActiveSessions()
-            .Select(tuple => new AVDumpMessageEventSignalRModel(tuple.filePath, tuple.videoId, tuple.commandId, tuple.startedAt, tuple.progress))
+            .Select(session => new AVDumpMessageEventSignalRModel(session.FilePath, session.VideoID, session.CommandID, session.StartedAt, session.Progress))
             .ToList();
     }
 }
