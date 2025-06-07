@@ -1288,7 +1288,6 @@ public class TraktTVHelper
                 return new List<TraktV2ShowCollectedResult>();
             }
 
-
             var result = json.FromJSONArray<TraktV2ShowCollectedResult>();
             if (result == null)
             {
@@ -1376,12 +1375,12 @@ public class TraktTVHelper
         try
         {
             var settings = _settingsProvider.GetSettings();
-            if (!settings.TraktTv.Enabled || string.IsNullOrEmpty(settings.TraktTv.AuthToken) || !settings.TraktTv.VipStatus)
+            if (!settings.TraktTv.Enabled || string.IsNullOrEmpty(settings.TraktTv.AuthToken))
             {
                 return;
             }
 
-            // check that we have at least one user nominated for Trakt
+            // Check that at least one user is nominated for Trakt
             var traktUsers = RepoFactory.JMMUser.GetTraktUsers();
             if (traktUsers.Count == 0)
             {
@@ -1390,42 +1389,51 @@ public class TraktTVHelper
 
             var allSeries = RepoFactory.AnimeSeries.GetAll();
 
-            // now get the full users collection from Trakt
+            // Prepare collection and watched lists
             var collected = new List<TraktV2ShowCollectedResult>();
             var watched = new List<TraktV2ShowWatchedResult>();
+            int traktCode = TraktStatusCodes.Success;
 
-            if (!GetTraktCollectionInfo(ref collected, ref watched))
+            // At the start: split logic for error handling
+            if (settings.TraktTv.VipStatus)
             {
+                collected = GetCollectedShows(ref traktCode);
+                if (traktCode != TraktStatusCodes.Success)
+                {
+                    _logger.LogError("Could not get users collection: {TraktCode}", traktCode);
+                    return;
+                }
+            }
+
+            watched = GetWatchedShows(ref traktCode);
+            if (traktCode != TraktStatusCodes.Success)
+            {
+                _logger.LogError("Could not get users watched history: {TraktCode}", traktCode);
                 return;
             }
 
             var syncCollectionAdd = new TraktV2SyncCollectionEpisodesByNumber();
-            var syncCollectionRemove =
-                new TraktV2SyncCollectionEpisodesByNumber();
+            var syncCollectionRemove = new TraktV2SyncCollectionEpisodesByNumber();
             var syncHistoryAdd = new TraktV2SyncWatchedEpisodesByNumber();
             var syncHistoryRemove = new TraktV2SyncWatchedEpisodesByNumber();
 
             #region Local Collection Sync
 
-            ///////////////////////////////////////////////////////////////////////////////////////
-            // First take a look at our local collection and update on Trakt
-            ///////////////////////////////////////////////////////////////////////////////////////
+            ///////////////////////////////////////////////////////////////////////////////
+            // First, look at our local collection and update Trakt
+            ///////////////////////////////////////////////////////////////////////////////
 
             var counter = 0;
             foreach (var series in allSeries)
             {
                 counter++;
-                _logger.LogTrace("Syncing check -  local collection: {Counter} / {Count} - {Name}", counter,
-                    allSeries.Count,
-                    series.PreferredTitle);
+                _logger.LogTrace("Syncing check - local collection: {Counter} / {Count} - {Name}", counter, allSeries.Count, series.PreferredTitle);
 
                 var anime = RepoFactory.AniDB_Anime.GetByAnimeID(series.AniDB_ID);
                 if (anime == null)
                 {
                     continue;
                 }
-
-                //if (anime.AnimeID != 3427) continue;
 
                 var traktSummary = new TraktSummaryContainer();
                 traktSummary.Populate(series.AniDB_ID);
@@ -1434,8 +1442,6 @@ public class TraktTVHelper
                     continue;
                 }
 
-                // get the current watched records for this series on Trakt
-
                 foreach (var ep in series.AllAnimeEpisodes)
                 {
                     if (ep.EpisodeTypeEnum is not EpisodeType.Episode and not EpisodeType.Special)
@@ -1443,27 +1449,24 @@ public class TraktTVHelper
                         continue;
                     }
 
-                    var epsync = ReconSyncTraktEpisode(series, ep, traktUsers,
-                        collected, watched, false);
+                    var epsync = ReconSyncTraktEpisode(series, ep, traktUsers, collected, watched, false);
                     if (epsync != null)
                     {
                         switch (epsync.SyncType)
                         {
                             case TraktSyncType.CollectionAdd:
-                                syncCollectionAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber,
-                                    epsync.EpDate);
+                                if (settings.TraktTv.VipStatus)
+                                    syncCollectionAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                             case TraktSyncType.CollectionRemove:
-                                syncCollectionRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber,
-                                    epsync.EpDate);
+                                if (settings.TraktTv.VipStatus)
+                                    syncCollectionRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                             case TraktSyncType.HistoryAdd:
-                                syncHistoryAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber,
-                                    epsync.EpDate);
+                                syncHistoryAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                             case TraktSyncType.HistoryRemove:
-                                syncHistoryRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber,
-                                    epsync.EpDate);
+                                syncHistoryRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                         }
                     }
@@ -1472,7 +1475,9 @@ public class TraktTVHelper
 
             #endregion
 
-            // refresh online info, just in case it was chnaged by the last operations
+            ///////////////////////////////////////////////////////////////////////////////
+            // Refresh online info after local collection sync, just in case it was changed
+            ///////////////////////////////////////////////////////////////////////////////
             if (!GetTraktCollectionInfo(ref collected, ref watched))
             {
                 return;
@@ -1480,23 +1485,17 @@ public class TraktTVHelper
 
             #region Online Collection Sync
 
-            ///////////////////////////////////////////////////////////////////////////////////////
+            ///////////////////////////////////////////////////////////////////////////////
             // Now look at the collection according to Trakt, and remove it if we don't have it locally
-            ///////////////////////////////////////////////////////////////////////////////////////
-
+            ///////////////////////////////////////////////////////////////////////////////
 
             counter = 0;
             foreach (var col in collected)
             {
                 counter++;
-                _logger.LogTrace("Syncing check - Online collection: {Counter} / {Count} - {Title}", counter,
-                    collected.Count,
-                    col.show.Title);
-                //continue;
+                _logger.LogTrace("Syncing check - online collection: {Counter} / {Count} - {Title}", counter, collected.Count, col.show.Title);
 
-                // check if we have this series locally
-                var xrefs =
-                    RepoFactory.CrossRef_AniDB_TraktV2.GetByTraktID(col.show.IDs.TraktSlug);
+                var xrefs = RepoFactory.CrossRef_AniDB_TraktV2.GetByTraktID(col.show.IDs.TraktSlug);
 
                 if (xrefs.Count <= 0)
                 {
@@ -1518,7 +1517,6 @@ public class TraktTVHelper
                         continue;
                     }
 
-                    // if we have this series locSeries, let's sync the whole series
                     foreach (var ep in locSeries.AllAnimeEpisodes)
                     {
                         if (ep.EpisodeTypeEnum is not EpisodeType.Episode and not EpisodeType.Special)
@@ -1526,30 +1524,24 @@ public class TraktTVHelper
                             continue;
                         }
 
-                        var epsync = ReconSyncTraktEpisode(locSeries, ep,
-                            traktUsers, collected, watched,
-                            false);
+                        var epsync = ReconSyncTraktEpisode(locSeries, ep, traktUsers, collected, watched, false);
                         if (epsync != null)
                         {
                             switch (epsync.SyncType)
                             {
                                 case TraktSyncType.CollectionAdd:
-                                    syncCollectionAdd.AddEpisode(epsync.Slug, epsync.Season,
-                                        epsync.EpNumber,
-                                        epsync.EpDate);
+                                    if (settings.TraktTv.VipStatus)
+                                        syncCollectionAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                     break;
                                 case TraktSyncType.CollectionRemove:
-                                    syncCollectionRemove.AddEpisode(epsync.Slug, epsync.Season,
-                                        epsync.EpNumber, epsync.EpDate);
+                                    if (settings.TraktTv.VipStatus)
+                                        syncCollectionRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                     break;
                                 case TraktSyncType.HistoryAdd:
-                                    syncHistoryAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber,
-                                        epsync.EpDate);
+                                    syncHistoryAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                     break;
                                 case TraktSyncType.HistoryRemove:
-                                    syncHistoryRemove.AddEpisode(epsync.Slug, epsync.Season,
-                                        epsync.EpNumber,
-                                        epsync.EpDate);
+                                    syncHistoryRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                     break;
                             }
                         }
@@ -1559,7 +1551,9 @@ public class TraktTVHelper
 
             #endregion
 
-            // refresh online info, just in case it was changed by the last operations
+            ///////////////////////////////////////////////////////////////////////////////
+            // Refresh online info again after collection sync, before history sync
+            ///////////////////////////////////////////////////////////////////////////////
             if (!GetTraktCollectionInfo(ref collected, ref watched))
             {
                 return;
@@ -1567,21 +1561,17 @@ public class TraktTVHelper
 
             #region Online History (Watched/Unwatched) Sync
 
-            ///////////////////////////////////////////////////////////////////////////////////////
+            ///////////////////////////////////////////////////////////////////////////////
             // Now look at the history according to Trakt, and remove it if we don't have it locally
-            ///////////////////////////////////////////////////////////////////////////////////////
+            ///////////////////////////////////////////////////////////////////////////////
 
             counter = 0;
-
             foreach (var wtch in watched)
             {
                 counter++;
-                _logger.LogTrace("Syncing check - Online History: {Counter} / {Count} - {Title}", counter,
-                    watched.Count, wtch.show.Title);
+                _logger.LogTrace("Syncing check - online history: {Counter} / {Count} - {Title}", counter, watched.Count, wtch.show.Title);
 
-                // check if we have this series locally
-                var xrefs =
-                    RepoFactory.CrossRef_AniDB_TraktV2.GetByTraktID(wtch.show.IDs.TraktSlug);
+                var xrefs = RepoFactory.CrossRef_AniDB_TraktV2.GetByTraktID(wtch.show.IDs.TraktSlug);
 
                 if (xrefs.Count <= 0)
                 {
@@ -1603,7 +1593,6 @@ public class TraktTVHelper
                         continue;
                     }
 
-                    // if we have this series locSeries, let's sync the whole series
                     foreach (var ep in locSeries.AllAnimeEpisodes)
                     {
                         if (ep.EpisodeTypeEnum is not EpisodeType.Episode and not EpisodeType.Special)
@@ -1620,30 +1609,18 @@ public class TraktTVHelper
                         switch (epsync.SyncType)
                         {
                             case TraktSyncType.CollectionAdd:
-                                syncCollectionAdd.AddEpisode(
-                                    epsync.Slug, epsync.Season,
-                                    epsync.EpNumber,
-                                    epsync.EpDate
-                                );
+                                if (settings.TraktTv.VipStatus)
+                                    syncCollectionAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                             case TraktSyncType.CollectionRemove:
-                                syncCollectionRemove.AddEpisode(
-                                    epsync.Slug, epsync.Season,
-                                    epsync.EpNumber, epsync.EpDate
-                                );
+                                if (settings.TraktTv.VipStatus)
+                                    syncCollectionRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                             case TraktSyncType.HistoryAdd:
-                                syncHistoryAdd.AddEpisode(
-                                    epsync.Slug, epsync.Season, epsync.EpNumber,
-                                    epsync.EpDate
-                                );
+                                syncHistoryAdd.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                             case TraktSyncType.HistoryRemove:
-                                syncHistoryRemove.AddEpisode(
-                                    epsync.Slug, epsync.Season,
-                                    epsync.EpNumber,
-                                    epsync.EpDate
-                                );
+                                syncHistoryRemove.AddEpisode(epsync.Slug, epsync.Season, epsync.EpNumber, epsync.EpDate);
                                 break;
                         }
                     }
@@ -1652,27 +1629,33 @@ public class TraktTVHelper
 
             #endregion
 
-            // send the data to Trakt
+            ///////////////////////////////////////////////////////////////////////////////
+            // Send data to Trakt
+            ///////////////////////////////////////////////////////////////////////////////
+
             string json;
             string url;
             string retData;
 
-            if (syncCollectionAdd.shows is { Count: > 0 })
+            if (settings.TraktTv.VipStatus)
             {
-                json = JsonConvert.SerializeObject(syncCollectionAdd);
-                url = TraktURIs.SyncCollectionAdd;
-                retData = string.Empty;
-                TraktTVRateLimiter.Instance.EnsureRate();
-                SendData(url, json, "POST", BuildRequestHeaders(), ref retData);
-            }
+                if (syncCollectionAdd.shows is { Count: > 0 })
+                {
+                    json = JsonConvert.SerializeObject(syncCollectionAdd);
+                    url = TraktURIs.SyncCollectionAdd;
+                    retData = string.Empty;
+                    TraktTVRateLimiter.Instance.EnsureRate();
+                    SendData(url, json, "POST", BuildRequestHeaders(), ref retData);
+                }
 
-            if (syncCollectionRemove.shows is { Count: > 0 })
-            {
-                json = JsonConvert.SerializeObject(syncCollectionRemove);
-                url = TraktURIs.SyncCollectionRemove;
-                retData = string.Empty;
-                TraktTVRateLimiter.Instance.EnsureRate();
-                SendData(url, json, "POST", BuildRequestHeaders(), ref retData);
+                if (syncCollectionRemove.shows is { Count: > 0 })
+                {
+                    json = JsonConvert.SerializeObject(syncCollectionRemove);
+                    url = TraktURIs.SyncCollectionRemove;
+                    retData = string.Empty;
+                    TraktTVRateLimiter.Instance.EnsureRate();
+                    SendData(url, json, "POST", BuildRequestHeaders(), ref retData);
+                }
             }
 
             if (syncHistoryAdd.shows is { Count: > 0 })
@@ -1930,34 +1913,41 @@ public class TraktTVHelper
     }
 
     private bool GetTraktCollectionInfo(ref List<TraktV2ShowCollectedResult> collected,
-        ref List<TraktV2ShowWatchedResult> watched)
+    ref List<TraktV2ShowWatchedResult> watched)
     {
         try
         {
             var settings = _settingsProvider.GetSettings();
-            if (!settings.TraktTv.Enabled || string.IsNullOrEmpty(settings.TraktTv.AuthToken) || !settings.TraktTv.VipStatus)
+            if (!settings.TraktTv.Enabled || string.IsNullOrEmpty(settings.TraktTv.AuthToken))
             {
                 return false;
             }
 
-            // check that we have at least one user nominated for Trakt
+            // Check that we have at least one user nominated for Trakt
             var traktUsers = RepoFactory.JMMUser.GetTraktUsers();
             if (traktUsers.Count == 0)
             {
                 return false;
             }
 
-            var traktCode = TraktStatusCodes.Success;
+            int traktCode = TraktStatusCodes.Success;
 
-            // now get the full users collection from Trakt
-            collected = GetCollectedShows(ref traktCode);
-            if (traktCode != TraktStatusCodes.Success)
+            // For VIP: fetch collection. Non-VIP: just set empty collection.
+            if (settings.TraktTv.VipStatus)
             {
-                _logger.LogError("Could not get users collection: {TraktCode}", traktCode);
-                return false;
+                collected = GetCollectedShows(ref traktCode);
+                if (traktCode != TraktStatusCodes.Success)
+                {
+                    _logger.LogError("Could not get users collection: {TraktCode}", traktCode);
+                    return false;
+                }
+            }
+            else
+            {
+                collected = new List<TraktV2ShowCollectedResult>();
             }
 
-            // now get all the shows / episodes the user has watched
+            // For everyone: fetch watched history
             watched = GetWatchedShows(ref traktCode);
             if (traktCode == TraktStatusCodes.Success)
             {
