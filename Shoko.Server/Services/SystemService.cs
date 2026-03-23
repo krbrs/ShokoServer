@@ -353,7 +353,7 @@ public class SystemService : ISystemService
 #endif
                     })
                     .UseNLog()
-                    .UseSentryConfig()
+                    .UseSentryConfig(_settingsProvider)
             )
             .Build();
 
@@ -399,7 +399,7 @@ public class SystemService : ISystemService
             services.AddScoped<AnimeGroupCreator>();
 
             services.AddRepositories();
-            services.AddSentryConfig();
+            services.AddSentryConfig(settingsProvider);
             services.AddQuartz(systemService);
 
             services.AddHttpClient("GitHub", client =>

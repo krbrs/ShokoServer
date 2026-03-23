@@ -16,8 +16,8 @@ using Shoko.Abstractions.Core;
 using Shoko.Abstractions.Extensions;
 using Shoko.Server.Plugin;
 using Shoko.Server.Providers.AniDB.UDP.Exceptions;
-using Shoko.Server.Utilities;
-using Constants = Shoko.Server.Server.Constants;
+using Shoko.Server.Server;
+using Shoko.Server.Settings;
 
 #nullable enable
 
@@ -25,9 +25,9 @@ namespace Shoko.Server.Services.ErrorHandling;
 
 public static class SentryInit
 {
-    public static IServiceCollection AddSentryConfig(this IServiceCollection services)
+    public static IServiceCollection AddSentryConfig(this IServiceCollection services, ISettingsProvider settingsProvider)
     {
-        var settings = Utils.SettingsProvider.GetSettings();
+        var settings = settingsProvider.GetSettings();
 
         // Only try to set up Sentry if the user DID NOT OPT __OUT__.
         if (settings.SentryOptOut || !Constants.SentryDsn.StartsWith("https://"))
@@ -38,9 +38,9 @@ public static class SentryInit
         return services;
     }
 
-    public static IWebHostBuilder UseSentryConfig(this IWebHostBuilder webHost)
+    public static IWebHostBuilder UseSentryConfig(this IWebHostBuilder webHost, ISettingsProvider settingsProvider)
     {
-        var settings = Utils.SettingsProvider.GetSettings();
+        var settings = settingsProvider.GetSettings();
 
         // Only try to set up Sentry if the user DID NOT OPT __OUT__.
         if (settings.SentryOptOut || !Constants.SentryDsn.StartsWith("https://"))
