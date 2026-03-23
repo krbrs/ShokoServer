@@ -164,9 +164,8 @@ public partial class ShokoServiceImplementation
             if (gf is null) return retEps;
 
             var evaluator = HttpContext.RequestServices.GetRequiredService<IFilterEvaluator>();
-            var groupService = HttpContext.RequestServices.GetRequiredService<AnimeGroupService>();
             var comboGroups = evaluator.EvaluateFilter(gf, user).Select(a => RepoFactory.AnimeGroup.GetByID(a.Key)).WhereNotNull()
-                .Select(a => groupService.GetV1Contract(a, userID));
+                .Select(a => _legacyV1Service.GetV1Contract(a, userID));
 
             foreach (var group in comboGroups)
             {
@@ -1328,9 +1327,8 @@ public partial class ShokoServiceImplementation
         var grps = new List<CL_AnimeGroup_User>();
         try
         {
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
             return RepoFactory.AnimeGroup.GetAll()
-                .Select(a => groupService.GetV1Contract(a, userID))
+                .Select(a => _legacyV1Service.GetV1Contract(a, userID))
                 .OrderBy(a => a.GroupName)
                 .ToList();
         }
@@ -1349,14 +1347,13 @@ public partial class ShokoServiceImplementation
         try
         {
             int? grpid = animeGroupID;
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
             while (grpid.HasValue)
             {
                 grpid = null;
                 var grp = RepoFactory.AnimeGroup.GetByID(animeGroupID);
                 if (grp != null)
                 {
-                    grps.Add(groupService.GetV1Contract(grp, userID));
+                    grps.Add(_legacyV1Service.GetV1Contract(grp, userID));
                     grpid = grp.AnimeGroupParentID;
                 }
             }
@@ -1383,10 +1380,9 @@ public partial class ShokoServiceImplementation
                 return grps;
             }
 
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
             foreach (var grp in series.AllGroupsAbove)
             {
-                grps.Add(groupService.GetV1Contract(grp, userID));
+                grps.Add(_legacyV1Service.GetV1Contract(grp, userID));
             }
 
             return grps;
@@ -1404,8 +1400,7 @@ public partial class ShokoServiceImplementation
     {
         try
         {
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
-            return groupService.GetV1Contract(RepoFactory.AnimeGroup.GetByID(animeGroupID), userID);
+            return _legacyV1Service.GetV1Contract(RepoFactory.AnimeGroup.GetByID(animeGroupID), userID);
         }
         catch (Exception ex)
         {
@@ -1488,8 +1483,7 @@ public partial class ShokoServiceImplementation
             {
                 var evaluator = HttpContext.RequestServices.GetRequiredService<IFilterEvaluator>();
                 var results = evaluator.EvaluateFilter(gf, user);
-                var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
-                retGroups = results.Select(a => RepoFactory.AnimeGroup.GetByID(a.Key)).WhereNotNull().Select(a => groupService.GetV1Contract(a, userID))
+                retGroups = results.Select(a => RepoFactory.AnimeGroup.GetByID(a.Key)).WhereNotNull().Select(a => _legacyV1Service.GetV1Contract(a, userID))
                     .ToList();
             }
 
@@ -1661,7 +1655,7 @@ public partial class ShokoServiceImplementation
             if (mainSeries is not null)
                 _userDataService.SetSeriesAsFavorite(mainSeries, user, contract.IsFave == 1);
 
-            contractout.Result = groupService.GetV1Contract(group, userID);
+            contractout.Result = _legacyV1Service.GetV1Contract(group, userID);
 
             return contractout;
         }
@@ -1991,8 +1985,7 @@ public partial class ShokoServiceImplementation
     {
         try
         {
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
-            return groupService.GetV1Contract(RepoFactory.AnimeSeries.GetByID(animeSeriesID)?.TopLevelAnimeGroup, userID);
+            return _legacyV1Service.GetV1Contract(RepoFactory.AnimeSeries.GetByID(animeSeriesID)?.TopLevelAnimeGroup, userID);
         }
         catch (Exception ex)
         {
@@ -2418,10 +2411,9 @@ public partial class ShokoServiceImplementation
                 return retGroups;
             }
 
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
             foreach (var grpChild in grp.Children)
             {
-                var ugrp = groupService.GetV1Contract(grpChild, userID);
+                var ugrp = _legacyV1Service.GetV1Contract(grpChild, userID);
                 if (ugrp != null) retGroups.Add(ugrp);
             }
 

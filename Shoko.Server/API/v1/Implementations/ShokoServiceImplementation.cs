@@ -156,11 +156,10 @@ public partial class ShokoServiceImplementation : Controller
                 changes[0].LastChange = changes[1].LastChange;
             }
 
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
             c.Groups.ChangedItems = changes[0]
                 .ChangedItems.Select(RepoFactory.AnimeGroup.GetByID)
                 .WhereNotNull()
-                .Select(a => groupService.GetV1Contract(a, userID))
+                .Select(a => _legacyV1Service.GetV1Contract(a, userID))
                 .ToList();
 
 

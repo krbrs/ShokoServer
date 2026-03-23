@@ -1,20 +1,21 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
-using Shoko.Server.API.v1.Models;
-using Shoko.Abstractions.Metadata.Enums;
+using Microsoft.Extensions.Logging;
 using Shoko.Abstractions.Extensions;
+using Shoko.Abstractions.Metadata.Enums;
+using Shoko.Abstractions.User.Enums;
+using Shoko.Abstractions.Video.Media;
+using Shoko.Server.API.v1.Models;
 using Shoko.Server.Extensions;
 using Shoko.Server.Models.AniDB;
+using Shoko.Server.Models.Shoko;
+using Shoko.Server.Providers.AniDB.Release;
 using Shoko.Server.Repositories;
 using Shoko.Server.Repositories.Cached;
 using Shoko.Server.Repositories.Cached.AniDB;
-using Shoko.Server.Models.Shoko;
-using Shoko.Server.Providers.AniDB.Release;
-using System.IO;
-using Shoko.Abstractions.Video.Media;
-using Microsoft.Extensions.Logging;
 
 #pragma warning disable CS0618
 #nullable enable
@@ -28,6 +29,7 @@ public class ShokoServiceImplementationService(
     AnimeEpisode_UserRepository epUsers,
     AnimeSeries_UserRepository _seriesUsers,
     AnimeSeries_UserRepository seriesUsers,
+    AnimeGroup_UserRepository _groupUsers,
     StoredReleaseInfoRepository _storedReleaseInfo,
     VideoLocal_UserRepository _vlUsers,
     VideoLocalRepository _videoLocals
@@ -384,5 +386,356 @@ public class ShokoServiceImplementationService(
         };
 
         return cl;
+    }
+
+    [return: NotNullIfNotNull(nameof(group))]
+    public CL_AnimeGroup_User? GetV1Contract(AnimeGroup? group, int userid)
+    {
+        if (group == null) return null;
+        var groupSeries = group.AllSeries;
+        var mainSeries = group.MainSeries ?? groupSeries.FirstOrDefault();
+        var userDict = groupSeries
+            .Select(a => _seriesUsers.GetByUserAndSeriesID(userid, a.AnimeSeriesID))
+            .WhereNotNull()
+            .ToDictionary(a => a.AnimeSeriesID);
+        var votesByAnime = userDict.Values
+            .Where(x => x.HasUserRating)
+            .ToDictionary(a => a.AnimeSeriesID);
+        var isFavorite = mainSeries is not null && userDict.TryGetValue(mainSeries.AnimeSeriesID, out var mainSeriesUser) && mainSeriesUser.IsFavorite;
+        var contract = GetContract(group);
+        var allVoteTotal = 0D;
+        var permVoteTotal = 0D;
+        var tempVoteTotal = 0D;
+        var allVoteCount = 0;
+        var permVoteCount = 0;
+        var tempVoteCount = 0;
+        foreach (var series in groupSeries)
+        {
+            if (votesByAnime.TryGetValue(series.AnimeSeriesID, out var seriesUserData))
+            {
+                allVoteCount++;
+                allVoteTotal += seriesUserData.UserRating!.Value;
+
+                switch (seriesUserData.UserRatingVoteType!.Value)
+                {
+                    case SeriesVoteType.Permanent:
+                        permVoteCount++;
+                        permVoteTotal += seriesUserData.UserRating!.Value;
+                        break;
+                    case SeriesVoteType.Temporary:
+                        tempVoteCount++;
+                        tempVoteTotal += seriesUserData.UserRating!.Value;
+                        break;
+                }
+            }
+        }
+        var groupUserData = _groupUsers.GetByUserAndGroupID(userid, group.AnimeGroupID);
+        if (groupUserData is not null)
+        {
+            contract.UnwatchedEpisodeCount = groupUserData.UnwatchedEpisodeCount;
+            contract.WatchedEpisodeCount = groupUserData.WatchedEpisodeCount;
+            contract.WatchedDate = groupUserData.WatchedDate;
+            contract.PlayedCount = groupUserData.PlayedCount;
+            contract.WatchedCount = groupUserData.WatchedCount;
+            contract.StoppedCount = groupUserData.StoppedCount;
+        }
+        contract.IsFave = isFavorite ? 1 : 0;
+        contract.Stat_UserVoteOverall = allVoteCount == 0 ? null : (decimal)Math.Round(allVoteTotal / allVoteCount / 100D, 2);
+        contract.Stat_UserVotePermanent = permVoteCount == 0 ? null : (decimal)Math.Round(permVoteTotal / permVoteCount / 100D, 2);
+        contract.Stat_UserVoteTemporary = tempVoteCount == 0 ? null : (decimal)Math.Round(tempVoteTotal / tempVoteCount / 100D, 2);
+
+        return contract;
+    }
+
+    [return: NotNullIfNotNull(nameof(animeGroup))]
+    public CL_AnimeGroup_User? GetContract(AnimeGroup? animeGroup)
+    {
+        if (animeGroup == null) return null;
+        var now = DateTime.Now;
+
+        var contract = new CL_AnimeGroup_User
+        {
+            AnimeGroupID = animeGroup.AnimeGroupID,
+            AnimeGroupParentID = animeGroup.AnimeGroupParentID,
+            DefaultAnimeSeriesID = animeGroup.DefaultAnimeSeriesID,
+            GroupName = animeGroup.GroupName,
+            Description = animeGroup.Description,
+            LatestEpisodeAirDate = animeGroup.LatestEpisodeAirDate,
+            SortName = animeGroup.GroupName.ToSortName(),
+            EpisodeAddedDate = animeGroup.EpisodeAddedDate,
+            OverrideDescription = animeGroup.OverrideDescription,
+            DateTimeUpdated = animeGroup.DateTimeUpdated,
+            IsFave = 0,
+            UnwatchedEpisodeCount = 0,
+            WatchedEpisodeCount = 0,
+            WatchedDate = null,
+            PlayedCount = 0,
+            WatchedCount = 0,
+            StoppedCount = 0,
+            MissingEpisodeCount = animeGroup.MissingEpisodeCount,
+            MissingEpisodeCountGroups = animeGroup.MissingEpisodeCountGroups
+        };
+
+        var allSeriesForGroup = animeGroup.AllSeries;
+        var allIDs = allSeriesForGroup.Select(a => a.AniDB_ID).ToArray();
+
+        DateTime? airDateMin = null;
+        DateTime? airDateMax = null;
+        DateTime? groupEndDate = new DateTime(1980, 1, 1);
+        DateTime? seriesCreatedDate = null;
+        var isComplete = false;
+        var hasFinishedAiring = false;
+        var isCurrentlyAiring = false;
+        var videoQualityEpisodes = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
+        var allVidQualByGroup = allSeriesForGroup
+            .SelectMany(a => _storedReleaseInfo.GetByAnidbAnimeID(a.AniDB_ID))
+            .Select(a => a.LegacySource)
+            .ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+        var tmdbShowXrefByAnime = allIDs
+            .Select(RepoFactory.CrossRef_AniDB_TMDB_Show.GetByAnidbAnimeID)
+            .Where(a => a is { Count: > 0 })
+            .ToDictionary(a => a[0].AnidbAnimeID);
+        var tmdbMovieXrefByAnime = allIDs
+            .Select(RepoFactory.CrossRef_AniDB_TMDB_Movie.GetByAnidbAnimeID)
+            .Where(a => a is { Count: > 0 })
+            .ToDictionary(a => a[0].AnidbAnimeID);
+        var malXRefByAnime = allIDs.SelectMany(RepoFactory.CrossRef_AniDB_MAL.GetByAnimeID).ToLookup(a => a.AnimeID);
+        // Even though the contract value says 'has link', it's easier to think about whether it's missing
+        var missingMALLink = false;
+        var missingTMDBLink = false;
+        var seriesCount = 0;
+        var epCount = 0;
+
+        var allYears = new HashSet<int>();
+        var allSeasons = new SortedSet<string>(new CL_SeasonComparator());
+
+        foreach (var series in allSeriesForGroup)
+        {
+            seriesCount++;
+
+            var vidsTemp = RepoFactory.VideoLocal.GetByAniDBAnimeID(series.AniDB_ID);
+            var crossRefs = RepoFactory.CrossRef_File_Episode.GetByAnimeID(series.AniDB_ID);
+            var crossRefsLookup = crossRefs.ToLookup(cr => cr.EpisodeID);
+            var dictVids = new Dictionary<string, VideoLocal>();
+
+            foreach (var vid in vidsTemp)
+            // Hashes may be repeated from multiple locations, but we don't care
+            {
+                dictVids[vid.Hash] = vid;
+            }
+
+            // All Video Quality Episodes
+            // Try to determine if this anime has all the episodes available at a certain video quality
+            // e.g.  the series has all episodes in blu-ray
+            // Also look at languages
+            var vidQualEpCounts = new Dictionary<string, int>();
+            // video quality, count of episodes
+            var anime = series.AniDB_Anime!;
+
+            foreach (var ep in series.AllAnimeEpisodes)
+            {
+                if (ep.AniDB_Episode is null || ep.EpisodeType is not EpisodeType.Episode)
+                {
+                    continue;
+                }
+
+                var epVids = new List<VideoLocal>();
+
+                foreach (var xref in crossRefsLookup[ep.AniDB_EpisodeID])
+                {
+                    if (xref.EpisodeID != ep.AniDB_EpisodeID)
+                    {
+                        continue;
+                    }
+
+
+                    if (dictVids.TryGetValue(xref.Hash, out var video))
+                    {
+                        epVids.Add(video);
+                    }
+                }
+
+                var qualityAddedSoFar = new HashSet<string>();
+
+                // Handle mutliple files of the same quality for one episode
+                foreach (var vid in epVids)
+                {
+                    var release = vid.ReleaseInfo;
+
+                    if (release == null)
+                    {
+                        continue;
+                    }
+
+                    if (!qualityAddedSoFar.Contains(release.LegacySource))
+                    {
+                        vidQualEpCounts.TryGetValue(release.LegacySource, out var srcCount);
+                        vidQualEpCounts[release.LegacySource] =
+                            srcCount +
+                            1; // If the file source wasn't originally in the dictionary, then it will be set to 1
+
+                        qualityAddedSoFar.Add(release.LegacySource);
+                    }
+                }
+            }
+
+            epCount += anime.EpisodeCountNormal;
+
+            // Add all video qualities that span all of the normal episodes
+            videoQualityEpisodes.UnionWith(
+                vidQualEpCounts
+                    .Where(vqec => anime.EpisodeCountNormal == vqec.Value)
+                    .Select(vqec => vqec.Key));
+
+            // Calculate Air Date
+            var seriesAirDate = series.AirDate;
+
+            if (seriesAirDate.HasValue)
+            {
+                if (airDateMin == null || seriesAirDate.Value < airDateMin.Value)
+                {
+                    airDateMin = seriesAirDate.Value.ToDateTime();
+                }
+
+                if (airDateMax == null || seriesAirDate.Value > airDateMax.Value)
+                {
+                    airDateMax = seriesAirDate.Value.ToDateTime();
+                }
+            }
+
+            // Calculate end date
+            // If the end date is NULL it actually means it is ongoing, so this is the max possible value
+            var seriesEndDate = series.EndDate;
+
+            if (seriesEndDate is null || groupEndDate is null)
+            {
+                groupEndDate = null;
+            }
+            else if (seriesEndDate.Value > groupEndDate.Value)
+            {
+                groupEndDate = seriesEndDate?.ToDateTime();
+            }
+
+            // Note - only one series has to be finished airing to qualify
+            if (series.EndDate is not null && series.EndDate.Value < now)
+            {
+                hasFinishedAiring = true;
+            }
+
+            // Note - only one series has to be finished airing to qualify
+            if (series.EndDate is null || series.EndDate.Value > now)
+            {
+                isCurrentlyAiring = true;
+            }
+
+            // We evaluate IsComplete as true if
+            // 1. series has finished airing
+            // 2. user has all episodes locally
+            // Note - only one series has to be complete for the group to be considered complete
+            if (series.EndDate is not null && series.EndDate.Value < now
+                                       && series.MissingEpisodeCount == 0 &&
+                                       series.MissingEpisodeCountGroups == 0)
+            {
+                isComplete = true;
+            }
+
+            // Calculate Series Created Date
+            var createdDate = series.DateTimeCreated;
+
+            if (seriesCreatedDate == null || createdDate < seriesCreatedDate.Value)
+            {
+                seriesCreatedDate = createdDate;
+            }
+
+            // For the group, if any of the series don't have a tmdb link
+            // we will consider the group as not having a tmdb link
+            var foundTMDBShowLink = tmdbShowXrefByAnime.TryGetValue(anime.AnimeID, out var _);
+            var foundTMDBMovieLink = tmdbMovieXrefByAnime.TryGetValue(anime.AnimeID, out var _);
+            var isMovie = anime.AnimeType is AnimeType.Movie;
+
+            if (!foundTMDBShowLink && !foundTMDBMovieLink)
+            {
+                if (!series.IsTMDBAutoMatchingDisabled)
+                {
+                    missingTMDBLink = true;
+                }
+            }
+
+            if (!malXRefByAnime[anime.AnimeID].Any())
+            {
+                missingMALLink = true;
+            }
+
+            var endYear = anime.EndYear;
+            if (endYear == 0)
+            {
+                endYear = DateTime.Today.Year;
+            }
+
+            var startYear = anime.BeginYear;
+            if (endYear < startYear)
+            {
+                endYear = startYear;
+            }
+
+            if (startYear != 0)
+            {
+                List<int> years;
+                if (startYear == endYear)
+                {
+                    years = new List<int>
+                    {
+                        startYear
+                    };
+                }
+                else
+                {
+                    years = Enumerable.Range(anime.BeginYear, endYear - anime.BeginYear + 1)
+                        .Where(anime.IsInYear).ToList();
+                }
+
+                allYears.UnionWith(years);
+                allSeasons.UnionWith(anime.YearlySeasons.Select(tuple => $"{tuple.Season} {tuple.Year}"));
+            }
+        }
+
+        contract.Stat_AllYears = allYears;
+        contract.Stat_AllSeasons = allSeasons;
+        contract.Stat_AllTags = animeGroup.Tags.Select(a => a.TagName.Trim()).ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+        contract.Stat_AllCustomTags = animeGroup.CustomTags.Select(a => a.TagName).ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+        contract.Stat_AllTitles = animeGroup.Titles.Select(a => a.Title).ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+        contract.Stat_AnimeTypes = allSeriesForGroup.Select(a => a.AniDB_Anime!.AnimeType.ToString().Replace('_', ' ')).WhereNotNull().ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+        contract.Stat_AllVideoQuality = allVidQualByGroup;
+        contract.Stat_IsComplete = isComplete;
+        contract.Stat_HasFinishedAiring = hasFinishedAiring;
+        contract.Stat_IsCurrentlyAiring = isCurrentlyAiring;
+        contract.Stat_HasTvDBLink = false; // Deprecated
+        contract.Stat_HasTraktLink = false; // Has a link if it isn't missing
+        contract.Stat_HasMALLink = !missingMALLink; // Has a link if it isn't missing
+        contract.Stat_HasMovieDBLink = !missingTMDBLink; // Has a link if it isn't missing
+        contract.Stat_HasMovieDBOrTvDBLink = !missingTMDBLink; // Has a link if it isn't missing
+        contract.Stat_SeriesCount = seriesCount;
+        contract.Stat_EpisodeCount = epCount;
+        contract.Stat_AllVideoQuality_Episodes = videoQualityEpisodes;
+        contract.Stat_AirDate_Min = airDateMin;
+        contract.Stat_AirDate_Max = airDateMax;
+        contract.Stat_EndDate = groupEndDate;
+        contract.Stat_SeriesCreatedDate = seriesCreatedDate;
+        contract.Stat_AniDBRating = animeGroup.AniDBRating;
+        contract.Stat_AudioLanguages = animeGroup.AllSeries
+            .Select(a => a.AniDB_Anime)
+            .WhereNotNull()
+            .SelectMany(a => _storedReleaseInfo.GetByAnidbAnimeID(a.AnimeID))
+            .SelectMany(a => a.AudioLanguages?.Select(b => b.GetString()) ?? [])
+            .ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+        contract.Stat_SubtitleLanguages = animeGroup.AllSeries
+            .Select(a => a.AniDB_Anime)
+            .WhereNotNull()
+            .SelectMany(a => _storedReleaseInfo.GetByAnidbAnimeID(a.AnimeID))
+            .SelectMany(a => a.SubtitleLanguages?.Select(b => b.GetString()) ?? [])
+            .ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+        contract.LatestEpisodeAirDate = animeGroup.LatestEpisodeAirDate;
+
+        return contract;
     }
 }

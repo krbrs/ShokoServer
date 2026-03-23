@@ -218,9 +218,8 @@ public class ShokoServiceImplementationMetro : IHttpContextAccessor
     {
         try
         {
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
             return RepoFactory.AnimeGroup.GetAll()
-                .Select(a => groupService.GetV1Contract(a, userID))
+                .Select(a => _legacyV1Service.GetV1Contract(a, userID))
                 .OrderBy(a => a.SortName).ToList();
         }
         catch (Exception ex)
@@ -527,9 +526,8 @@ public class ShokoServiceImplementationMetro : IHttpContextAccessor
             var evaluator = HttpContext.RequestServices.GetRequiredService<IFilterEvaluator>();
             var results = evaluator.EvaluateFilter(gf, user);
 
-            var groupService = Utils.ServiceContainer.GetRequiredService<AnimeGroupService>();
             var comboGroups = results.Select(a => RepoFactory.AnimeGroup.GetByID(a.Key)).Where(a => a is not null)
-                .Select(a => groupService.GetV1Contract(a, userID));
+                .Select(a => _legacyV1Service.GetV1Contract(a, userID));
 
             foreach (var grp in comboGroups)
             {
