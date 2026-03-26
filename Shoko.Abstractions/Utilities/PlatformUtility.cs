@@ -12,7 +12,7 @@ namespace Shoko.Abstractions.Utilities;
 /// </summary>
 public static partial class PlatformUtility
 {
-    [GeneratedRegex(@"^(?<letter>[a-zA-Z]):\\?|^win://(?<letter>[a-zA-Z])/?")]
+    [GeneratedRegex(@"^(?<letter>[a-zA-Z]):(?:$|\\(?=[^\n]+))|^win://(?<letter>[a-zA-Z])/?")]
     private static partial Regex DriveLetterRegex();
 
     /// <summary>
