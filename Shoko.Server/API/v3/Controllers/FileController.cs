@@ -15,6 +15,7 @@ using Shoko.Abstractions.Extensions;
 using Shoko.Abstractions.User.Enums;
 using Shoko.Abstractions.User.Services;
 using Shoko.Abstractions.User.Update;
+using Shoko.Abstractions.Video.Media;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Server.API.Annotations;
 using Shoko.Server.API.ModelBinders;
@@ -833,7 +834,11 @@ public class FileController(
                 return ValidationProblem("The resume position cannot be less than zero.", nameof(resumePosition));
 
             // Alternatively, we could leave this to the user data service, but we want to give a useful response.
-            if (playPosition >= file.DurationTimeSpan)
+            // Set the video as watched and reset the progress if the progress is over 97.5%
+            var percentage = file.MediaInfo is IMediaInfo { Duration: var duration }
+                ? playPosition.Value.TotalMilliseconds / duration.TotalMilliseconds
+                : 0d;
+            if (percentage > 0.975d)
             {
                 watched = true;
                 playPosition = null;
