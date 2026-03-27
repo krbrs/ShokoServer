@@ -16,8 +16,6 @@ public class ConfigurationProvider<TConfig> : IDisposable where TConfig : class,
 {
     private readonly IConfigurationService _service;
 
-    private ConfigurationInfo? _pluginConfigurationInfo = null;
-
     /// <summary>
     ///   Occurs when a configuration is saved.
     /// </summary>
@@ -27,7 +25,7 @@ public class ConfigurationProvider<TConfig> : IDisposable where TConfig : class,
     ///   Gets the information about the configuration.
     /// </summary>
     public ConfigurationInfo ConfigurationInfo
-        => _pluginConfigurationInfo ??= _service.GetConfigurationInfo<TConfig>();
+        => _service.GetConfigurationInfo<TConfig>();
 
     /// <summary>
     ///   Initializes a new instance of the
