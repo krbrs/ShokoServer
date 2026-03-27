@@ -594,12 +594,12 @@ public class ShokoServiceImplementationService(
             {
                 if (airDateMin == null || seriesAirDate.Value < airDateMin.Value)
                 {
-                    airDateMin = seriesAirDate.Value.ToDateTime();
+                    airDateMin = seriesAirDate.Value;
                 }
 
                 if (airDateMax == null || seriesAirDate.Value > airDateMax.Value)
                 {
-                    airDateMax = seriesAirDate.Value.ToDateTime();
+                    airDateMax = seriesAirDate.Value;
                 }
             }
 
@@ -613,7 +613,7 @@ public class ShokoServiceImplementationService(
             }
             else if (seriesEndDate.Value > groupEndDate.Value)
             {
-                groupEndDate = seriesEndDate?.ToDateTime();
+                groupEndDate = seriesEndDate;
             }
 
             // Note - only one series has to be finished airing to qualify
