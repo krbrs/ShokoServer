@@ -668,7 +668,7 @@ jobs:
           # SENTRY_URL: https://sentry.io/
         with:
           environment: 'dev'
-          version: ${{ needs.current_info.outputs.version }}
+          version: ${{ needs.current_info.outputs.version_semver }}
 
   upload-site:
     runs-on: windows-latest
