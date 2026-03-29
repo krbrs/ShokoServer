@@ -28,9 +28,7 @@ public class ShokoManagedFolder : IManagedFolder
         // Normalize the path to the current platform.
         get => PlatformUtility.NormalizePath(_path, platformFormat: true) + System.IO.Path.DirectorySeparatorChar;
         // Normalize the path to the internal format.
-        set => _path = System.IO.Path.IsPathFullyQualified(value)
-            ? PlatformUtility.NormalizePath(value)
-            : throw new ArgumentException("The path must be fully qualified.");
+        set => _path = PlatformUtility.NormalizePath(value);
     }
 
     /// <summary>
