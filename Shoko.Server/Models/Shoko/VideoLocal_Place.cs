@@ -52,7 +52,7 @@ public class VideoLocal_Place : IVideoFile
             if (string.IsNullOrEmpty(folderPath) || string.IsNullOrEmpty(RelativePath))
                 return null;
 
-            return System.IO.Path.Join(folderPath, RelativePath);
+            return System.IO.Path.Join(folderPath, PlatformUtility.NormalizePath(RelativePath, platformFormat: true));
         }
     }
 
