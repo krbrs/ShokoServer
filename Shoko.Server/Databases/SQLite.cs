@@ -600,7 +600,7 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
         new(102,  1, "ALTER TABLE JMMUser ADD AvatarImageBlob BLOB NULL;"),
         new(102,  2, "ALTER TABLE JMMUser ADD AvatarImageMetadata VARCHAR(128) NULL;"),
         new(103,  1, "ALTER TABLE VideoLocal ADD LastAVDumped DATETIME;"),
-        new(103,  2, "ALTER TABLE VideoLocal ADD LastAVDumpVersion TEXT,"),
+        new(103,  2, "ALTER TABLE VideoLocal ADD LastAVDumpVersion TEXT;"),
         new(104,  1, DatabaseFixes.FixAnimeSourceLinks),
         new(104,  2, DatabaseFixes.FixOrphanedShokoEpisodes),
         new(105,  1, "CREATE TABLE FilterPreset( FilterPresetID INTEGER PRIMARY KEY AUTOINCREMENT, ParentFilterPresetID INTEGER, Name TEXT NOT NULL, FilterType INTEGER NOT NULL, Locked INTEGER NOT NULL, Hidden INTEGER NOT NULL, ApplyAtSeriesLevel INTEGER NOT NULL, Expression TEXT, SortingExpression TEXT ); "),
@@ -1159,7 +1159,7 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
                     "Duration"
                 ],
                 """
-                    "CREATE TABLE VideoLocal (
+                    CREATE TABLE VideoLocal (
                         VideoLocalID INTEGER PRIMARY KEY AUTOINCREMENT,
                         Hash TEXT NOT NULL,
                         CRC32 TEXT NULL, MD5 TEXT NULL,
@@ -1175,7 +1175,7 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
                         MediaBlob BLOB NULL,
                         MediaSize INTEGER NOT NULL DEFAULT 0,
                         MyListID INTEGER NOT NULL DEFAULT 0
-                    );"
+                    );
                 """,
                 [
                     "CREATE UNIQUE INDEX UIX2_VideoLocal_Hash on VideoLocal(Hash)",
