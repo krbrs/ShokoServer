@@ -258,12 +258,12 @@ public class StoredReleaseInfo : IReleaseInfo, IReleaseGroup, IReleaseMediaInfo,
                 IsCorrupted,
                 IsChaptered,
                 Source,
-                Hashes,
-                AudioLanguages,
-                SubtitleLanguages,
                 FileSize
             ),
-            CrossReferences
+            Hashes?.Aggregate(0, (a, r) => HashCode.Combine(a, r)),
+            AudioLanguages?.Aggregate(0, (a, r) => HashCode.Combine(a, r)),
+            SubtitleLanguages?.Aggregate(0, (a, r) => HashCode.Combine(a, r)),
+            CrossReferences.Aggregate(0, (a, r) => HashCode.Combine(a, r))
         );
     }
 
