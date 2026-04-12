@@ -34,6 +34,12 @@ public static class FilterExtensions
                 new HashSet<string>() { series.AniDB_ID.ToString() },
             SortingNameDelegate = () =>
                 series.Title.ToSortName(),
+            GroupIDDelegate = () =>
+                series.AnimeGroupID,
+            TopLevelGroupIDDelegate = () =>
+                series.TopLevelAnimeGroup.AnimeGroupID,
+            GroupIDsDelegate = () =>
+                series.AllGroupsAbove.Select(a => a.AnimeGroupID.ToString()).ToHashSet(),
             SeriesCountDelegate = () => 1,
             AirDateDelegate = () =>
                 series.AniDB_Anime?.AirDate,
@@ -213,6 +219,12 @@ public static class FilterExtensions
                 series.Select(a => a.AniDB_ID.ToString()).ToHashSet(),
             SortingNameDelegate = () =>
                 group.GroupName.ToSortName(),
+            GroupIDDelegate = () =>
+                group.AnimeGroupID,
+            TopLevelGroupIDDelegate = () =>
+                group.TopLevelAnimeGroup.AnimeGroupID,
+            GroupIDsDelegate = () =>
+                group.AllGroupsAbove.Prepend(group).Select(a => a.AnimeGroupID.ToString()).ToHashSet(),
             SeriesCountDelegate = () =>
                 series.Count,
             AirDateDelegate = () =>

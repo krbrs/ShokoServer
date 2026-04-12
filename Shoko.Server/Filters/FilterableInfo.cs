@@ -54,6 +54,9 @@ public class Filterable : IFilterableInfo
     private readonly Lazy<IReadOnlySet<string>> _creatorIDs;
     private readonly Lazy<IReadOnlyDictionary<CrewRoleType, IReadOnlySet<string>>> _creatorRoles;
     private readonly Lazy<IReadOnlySet<string>> _releaseGroupNames;
+    private readonly Lazy<int> _groupID;
+    private readonly Lazy<int> _topLevelGroupID;
+    private readonly Lazy<IReadOnlySet<string>> _groupIDs;
 
     public string Name => _name.Value;
 
@@ -81,6 +84,27 @@ public class Filterable : IFilterableInfo
     public required Func<string> SortingNameDelegate
     {
         init => _sortingName = new Lazy<string>(value);
+    }
+
+    public int GroupID => _groupID.Value;
+
+    public required Func<int> GroupIDDelegate
+    {
+        init => _groupID = new Lazy<int>(value);
+    }
+
+    public int TopLevelGroupID => _topLevelGroupID.Value;
+
+    public required Func<int> TopLevelGroupIDDelegate
+    {
+        init => _topLevelGroupID = new Lazy<int>(value);
+    }
+
+    public IReadOnlySet<string> GroupIDs => _groupIDs.Value;
+
+    public required Func<IReadOnlySet<string>> GroupIDsDelegate
+    {
+        init => _groupIDs = new Lazy<IReadOnlySet<string>>(value);
     }
 
     public int SeriesCount => _seriesCount.Value;

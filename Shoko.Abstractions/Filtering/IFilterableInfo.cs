@@ -30,6 +30,22 @@ public interface IFilterableInfo
     string SortingName { get; }
 
     /// <summary>
+    /// The group's ID. Will be the closest group's ID. So for groups it will be
+    /// the group's ID, for series it will be the parent group's ID.
+    /// </summary>
+    int GroupID { get; }
+
+    /// <summary>
+    /// The top-level parent group's ID.
+    /// </summary>
+    int TopLevelGroupID { get; }
+
+    /// <summary>
+    /// All parent group IDs.
+    /// </summary>
+    IReadOnlySet<string> GroupIDs { get; }
+
+    /// <summary>
     /// The number of series in a group
     /// </summary>
     int SeriesCount { get; }
