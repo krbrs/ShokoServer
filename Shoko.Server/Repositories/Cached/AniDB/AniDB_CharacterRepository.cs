@@ -25,4 +25,19 @@ public class AniDB_CharacterRepository(DatabaseFactory databaseFactory) : BaseCa
 
     public IReadOnlyList<AniDB_Character> GetCharactersForAnime(int animeID)
         => ReadLock(() => RepoFactory.AniDB_Anime_Character.GetByAnimeID(animeID).Select(xref => GetByCharacterID(xref.CharacterID)).WhereNotNull().ToList());
+
+    public AniDB_Character? GetByName(string creatorName)
+    {
+        return Lock(() =>
+        {
+            using var session = _databaseFactory.SessionFactory.OpenSession();
+            var id = session.Query<AniDB_Character>()
+                .Where(a => a.Name == creatorName)
+                .Take(1)
+                .SingleOrDefault()?.AniDB_CharacterID;
+            if (id.HasValue)
+                return Cache.Get(id.Value);
+            return null;
+        });
+    }
 }

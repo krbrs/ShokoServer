@@ -12,6 +12,7 @@ using Shoko.Server.API.v3.Models.Release;
 using Shoko.Server.Repositories.Cached;
 using Shoko.Server.Repositories.Cached.AniDB;
 using Shoko.Server.Settings;
+using Shoko.Server.Utilities;
 
 #pragma warning disable CA1822
 #nullable enable
@@ -25,7 +26,8 @@ public class AniDBController(
     ISettingsProvider settingsProvider,
     IAnidbService anidbService,
     StoredReleaseInfoRepository storedReleaseInfos,
-    AniDB_CreatorRepository anidbCreators
+    AniDB_CreatorRepository anidbCreators,
+    AniDB_CharacterRepository anidbCharacters
 ) : BaseController(settingsProvider)
 {
     /// <summary>
@@ -86,13 +88,21 @@ public class AniDBController(
     /// <summary>
     /// Get all anidb creators.
     /// </summary>
+    /// <param name="query">An optional query to filter creators by name.</param>
     /// <param name="pageSize">The page size. Set to <code>0</code> to disable pagination.</param>
     /// <param name="page">The page index.</param>
     /// <returns></returns>
     [HttpGet("Creator")]
-    public ActionResult<ListResult<AnidbCreator>> GetCreators([FromQuery, Range(0, 1000)] int pageSize = 20,
+    public ActionResult<ListResult<AnidbCreator>> GetCreators(
+        [FromQuery] string? query = null,
+        [FromQuery, Range(0, 1000)] int pageSize = 20,
         [FromQuery, Range(1, int.MaxValue)] int page = 1)
     {
+        if (!string.IsNullOrEmpty(query))
+            return anidbCreators.GetAll()
+                .Search(query, c => [c.Name, c.OriginalName])
+                .ToListResult(c => new AnidbCreator(c.Result), page, pageSize);
+
         return anidbCreators.GetAll()
             .ToListResult(c => new AnidbCreator(c), page, pageSize);
     }
@@ -125,5 +135,58 @@ public class AniDBController(
             return NotFound();
 
         return new AnidbCreator(creator);
+    }
+
+    /// <summary>
+    ///   Get all anidb characters.
+    /// </summary>
+    /// <param name="query">An optional query to filter characters by name.</param>
+    /// <param name="pageSize">The page size. Set to <code>0</code> to disable pagination.</param>
+    /// <param name="page">The page index.</param>
+    /// <returns></returns>
+    [HttpGet("Character")]
+    public ActionResult<ListResult<AnidbCharacter>> GetCharacters(
+        [FromQuery] string? query = null,
+        [FromQuery, Range(0, 1000)] int pageSize = 20,
+        [FromQuery, Range(1, int.MaxValue)] int page = 1
+    )
+    {
+        if (!string.IsNullOrEmpty(query))
+            return anidbCharacters.GetAll()
+                .Search(query, c => [c.Name, c.OriginalName])
+                .ToListResult(c => new AnidbCharacter(c.Result), page, pageSize);
+
+        return anidbCharacters.GetAll()
+            .ToListResult(c => new AnidbCharacter(c), 1, 0);
+    }
+
+    /// <summary>
+    /// Get an anidb character by id.
+    /// </summary>
+    /// <param name="id">The character id.</param>
+    /// <returns></returns>
+    [HttpGet("Character/{id}")]
+    public ActionResult<AnidbCharacter> GetCharacter(int id)
+    {
+        var character = anidbCharacters.GetByCharacterID(id);
+        if (character == null)
+            return NotFound();
+
+        return new AnidbCharacter(character);
+    }
+
+    /// <summary>
+    /// Get an anidb character by name.
+    /// </summary>
+    /// <param name="name">The character name.</param>
+    /// <returns></returns>
+    [HttpGet("Character/Name/{name}")]
+    public ActionResult<AnidbCharacter> GetCharacter(string name)
+    {
+        var character = anidbCharacters.GetByName(name);
+        if (character == null)
+            return NotFound();
+
+        return new AnidbCharacter(character);
     }
 }

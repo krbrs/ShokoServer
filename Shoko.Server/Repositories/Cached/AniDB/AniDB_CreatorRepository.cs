@@ -28,10 +28,13 @@ public class AniDB_CreatorRepository(DatabaseFactory databaseFactory) : BaseCach
         return Lock(() =>
         {
             using var session = _databaseFactory.SessionFactory.OpenSession();
-            return session.Query<AniDB_Creator>()
+            var id = session.Query<AniDB_Creator>()
                 .Where(a => a.Name == creatorName)
                 .Take(1)
-                .SingleOrDefault();
+                .SingleOrDefault()?.AniDB_CreatorID;
+            if (id.HasValue)
+                return Cache.Get(id.Value);
+            return null;
         });
     }
 }
