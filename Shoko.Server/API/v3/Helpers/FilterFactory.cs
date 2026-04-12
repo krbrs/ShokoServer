@@ -136,6 +136,9 @@ public class FilterFactory
         // Parameters
         switch (expression)
         {
+            case IWithBoolParameter parameter:
+                result.Parameter = parameter.ToString().ToLower();
+                break;
             case IWithStringParameter parameter:
                 result.Parameter = parameter.Parameter;
                 break;
@@ -203,6 +206,9 @@ public class FilterFactory
         // Parameters
         switch (result)
         {
+            case IWithBoolParameter parameter:
+                parameter.Parameter = condition.Parameter?.ToLower() == "true";
+                break;
             case IWithStringParameter parameter:
                 parameter.Parameter = condition.Parameter;
                 break;
