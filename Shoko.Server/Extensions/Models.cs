@@ -101,26 +101,26 @@ public static class Models
         switch (season)
         {
             case YearlySeason.Winter:
-                // January - buffer to April
-                seasonStart = new(year, 1, 1);
+                // January (starts 1w early) - buffer to April
+                seasonStart = new(year - 1, 12, 25);
                 seasonStartBegin = seasonStart.AddDays(-BufferDays);
                 seasonStartEnd = new(year, 4, 1);
                 break;
             case YearlySeason.Spring:
-                // April - buffer to July
-                seasonStart = new(year, 4, 1);
+                // April (starts 1w early) - buffer to July
+                seasonStart = new(year, 3, 25);
                 seasonStartBegin = seasonStart.AddDays(-BufferDays);
                 seasonStartEnd = new(year, 7, 1);
                 break;
             case YearlySeason.Summer:
-                // July - buffer to October
-                seasonStart = new(year, 7, 1);
+                // July (starts 1w early) - buffer to October
+                seasonStart = new(year, 6, 24);
                 seasonStartBegin = seasonStart.AddDays(-BufferDays);
                 seasonStartEnd = new(year, 10, 1);
                 break;
             case YearlySeason.Fall:
-                // October - buffer to January (next year)
-                seasonStart = new(year, 10, 1);
+                // October (starts 1w early) - buffer to January (next year)
+                seasonStart = new(year, 9, 24);
                 seasonStartBegin = seasonStart.AddDays(-BufferDays);
                 seasonStartEnd = new(year + 1, 1, 1);
                 break;
