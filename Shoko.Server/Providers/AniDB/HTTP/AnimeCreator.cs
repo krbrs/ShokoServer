@@ -1036,7 +1036,7 @@ public class AnimeCreator
         var charactersToRemove = xrefsToDelete
             .Select(x => x.Character)
             .WhereNotNull()
-            .Where(x => !x.GetRoles().Concat(characterXrefsToSave.Where(y => y.CharacterID == x.CharacterID)).ExceptBy(xrefsToDelete.Select(y => y.AniDB_Anime_CharacterID), y => y.AniDB_Anime_CharacterID).Any())
+            .Where(x => !RepoFactory.AniDB_Anime_Character.GetByCharacterID(x.CharacterID).Concat(characterXrefsToSave.Where(y => y.CharacterID == x.CharacterID)).ExceptBy(xrefsToDelete.Select(y => y.AniDB_Anime_CharacterID), y => y.AniDB_Anime_CharacterID).Any())
             .ToList();
         var creatorsToRemove = xrefsCreatorToDelete
             .Select(x => x.Creator)

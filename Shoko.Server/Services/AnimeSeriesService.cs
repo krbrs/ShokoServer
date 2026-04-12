@@ -125,10 +125,12 @@ public class AnimeSeriesService
         var existingEp = RepoFactory.AnimeEpisode.GetByAniDBEpisodeID(episode.EpisodeID);
         var isNew = existingEp is null;
         existingEp ??= new();
+        if (existingEp.AnimeEpisodeID is 0)
+            existingEp.DateTimeCreated = existingEp.DateTimeUpdated = DateTime.Now;
 
         var old = existingEp.DeepClone();
-        existingEp.Populate(episode);
         existingEp.AnimeSeriesID = animeSeriesID;
+        existingEp.AniDB_EpisodeID = episode.EpisodeID;
 
         var updated = !old.Equals(existingEp);
         if (isNew || updated)
@@ -532,7 +534,7 @@ public class AnimeSeriesService
             var characters = characterXrefs
                 .Select(x => x.Character)
                 .WhereNotNull()
-                .Where(x => !x.GetRoles().ExceptBy(characterXrefs.Select(y => y.AniDB_Anime_CharacterID), y => y.AniDB_Anime_CharacterID).Any())
+                .Where(x => !RepoFactory.AniDB_Anime_Character.GetByCharacterID(x.CharacterID).ExceptBy(characterXrefs.Select(y => y.AniDB_Anime_CharacterID), y => y.AniDB_Anime_CharacterID).Any())
                 .ToList();
             RepoFactory.AniDB_Anime_Character.Delete(characterXrefs);
             RepoFactory.AniDB_Character.Delete(characters);

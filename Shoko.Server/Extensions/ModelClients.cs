@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Shoko.Server.API.v1.Models;
 using Shoko.Abstractions.Metadata.Enums;
 using Shoko.Abstractions.Metadata.Tmdb;
 using Shoko.Abstractions.Video.Release;
+using Shoko.Server.API.v1.Models;
+using Shoko.Server.API.v1.Models.Metro;
 using Shoko.Server.Models.AniDB;
 using Shoko.Server.Models.CrossReference;
 using Shoko.Server.Models.Shoko;
@@ -336,8 +337,36 @@ public static class ModelClients
             CharName = character.Name,
             CharKanjiName = character.OriginalName,
             CharDescription = character.Description,
-            Seiyuu = character.GetCreator()?.ToClient(),
+            Seiyuu = RepoFactory.AniDB_Anime_Character_Creator.GetByCharacterID(character.CharacterID) is { Count: > 0 } characterVAs
+                ? characterVAs.OrderBy(x => x.AnimeID).ThenBy(x => x.Ordering).First().Creator?.ToClient()
+                : null,
         };
+
+    public static Metro_AniDB_Character ToContractMetro(this AniDB_Character character,
+        AniDB_Anime_Character charRel)
+    {
+        var contract = new Metro_AniDB_Character
+        {
+            AniDB_CharacterID = character.AniDB_CharacterID,
+            CharID = character.CharacterID,
+            CharName = character.Name,
+            CharKanjiName = character.OriginalName,
+            CharDescription = character.Description,
+            CharType = charRel.Appearance,
+            ImageType = (int)CL_ImageEntityType.AniDB_Character,
+            ImageID = character.AniDB_CharacterID
+        };
+        var creator = charRel.Creators is { Count: > 0 } ? charRel.Creators[0] : null;
+        if (creator != null)
+        {
+            contract.SeiyuuID = creator.AniDB_CreatorID;
+            contract.SeiyuuName = creator.Name;
+            contract.SeiyuuImageType = (int)CL_ImageEntityType.AniDB_Creator;
+            contract.SeiyuuImageID = creator.CreatorID;
+        }
+
+        return contract;
+    }
 
     public static CL_AniDB_Seiyuu ToClient(this AniDB_Creator creator)
         => new()
