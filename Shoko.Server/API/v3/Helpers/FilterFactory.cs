@@ -151,6 +151,9 @@ public class FilterFactory
             case IWithTimeSpanParameter parameter:
                 result.Parameter = parameter.Parameter == default ? null : parameter.Parameter.ToString("G");
                 break;
+            case IWithStringSetParameter parameter:
+                result.Parameter = parameter.Parameter.Join("|||");
+                break;
         }
 
         // Right/Second
@@ -224,6 +227,9 @@ public class FilterFactory
                 parameter.Parameter = string.IsNullOrEmpty(condition.Parameter)
                     ? default
                     : TimeSpan.ParseExact(condition.Parameter!, "G", CultureInfo.InvariantCulture.DateTimeFormat);
+                break;
+            case IWithStringSetParameter parameter:
+                parameter.Parameter = condition.Parameter.Split("|||").ToHashSet();
                 break;
         }
 
