@@ -171,6 +171,11 @@ public class FilterFactory
             case IWithSecondNumberSelectorParameter right:
                 result.Right = GetExpressionTree(right.Right);
                 break;
+        }
+
+        // Second Parameter
+        switch (expression)
+        {
             case IWithSecondStringParameter right:
                 result.SecondParameter = right.SecondParameter;
                 break;
@@ -248,6 +253,11 @@ public class FilterFactory
             case IWithSecondNumberSelectorParameter right:
                 right.Right = GetExpressionTree<double>(condition.Right);
                 break;
+        }
+
+        // Second Parameter
+        switch (result)
+        {
             case IWithSecondStringParameter right:
                 right.SecondParameter = condition.SecondParameter;
                 break;
