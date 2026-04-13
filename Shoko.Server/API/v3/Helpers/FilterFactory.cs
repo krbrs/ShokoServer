@@ -152,7 +152,7 @@ public class FilterFactory
                 result.Parameter = parameter.Parameter == default ? null : parameter.Parameter.ToString("G");
                 break;
             case IWithStringSetParameter parameter:
-                result.Parameter = parameter.Parameter.Join("|||");
+                result.Parameter = parameter.Parameter.Count is 0 ? null : parameter.Parameter.Join("|||");
                 break;
         }
 
@@ -234,7 +234,9 @@ public class FilterFactory
                     : TimeSpan.ParseExact(condition.Parameter!, "G", CultureInfo.InvariantCulture.DateTimeFormat);
                 break;
             case IWithStringSetParameter parameter:
-                parameter.Parameter = condition.Parameter.Split("|||").ToHashSet();
+                parameter.Parameter = condition.Parameter is null
+                    ? default
+                    : condition.Parameter[1..^1].Split("|||").ToHashSet();
                 break;
         }
 
