@@ -8,10 +8,20 @@ namespace Shoko.Tests;
 public class TestFilterable : IFilterableInfo
 {
     public string Name { get; init; }
+    public string MainName { get; init; }
+    public string OriginalName { get; init; }
+    public string SortName { get; init; }
     public IReadOnlySet<string> Names { get; init; }
-    public IReadOnlySet<string> AniDBIDs { get; init; }
-    public string SortingName { get; init; }
+    public string Description { get; init; }
+    public IReadOnlySet<string> Descriptions { get; init; }
+    public IReadOnlySet<string> SeriesIDs { get; init; }
+    public int GroupID { get; init; }
+    public int TopLevelGroupID { get; init; }
+    public IReadOnlySet<string> GroupIDs { get; init; }
+    public IReadOnlySet<string> AnidbAnimeIDs { get; init; }
     public int SeriesCount { get; init; }
+    public int GroupCount { get; init; }
+    public int TotalGroupCount { get; init; }
     public int MissingEpisodes { get; init; }
     public int MissingEpisodesCollecting { get; init; }
     public int VideoFiles { get; init; }

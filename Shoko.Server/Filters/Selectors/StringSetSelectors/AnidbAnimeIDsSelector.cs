@@ -4,10 +4,9 @@ using Shoko.Abstractions.Filtering;
 
 namespace Shoko.Server.Filters.Selectors.StringSetSelectors;
 
-// TODO: REMOVE THIS FILTER EXPRESSION SOMETIME IN THE FUTURE AFTER THE LEGACY FILTERS ARE REMOVED!!1!
-public class AniDBIDsSelector : FilterExpression<IReadOnlySet<string>>
+public class AnidbAnimeIDsSelector : FilterExpression<IReadOnlySet<string>>
 {
-    public override string HelpDescription => "This returns a set of all the AniDB IDs in a filterable. Legacy alias for AnidbAnimeIDsSelector";
+    public override string HelpDescription => "This returns a set of all the AniDB IDs in a filterable.";
 
     public override FilterExpressionGroup Group => FilterExpressionGroup.Selector;
 
@@ -16,7 +15,7 @@ public class AniDBIDsSelector : FilterExpression<IReadOnlySet<string>>
         return filterable.AnidbAnimeIDs;
     }
 
-    protected bool Equals(AniDBIDsSelector other)
+    protected bool Equals(AnidbAnimeIDsSelector other)
     {
         return base.Equals(other);
     }
@@ -38,7 +37,7 @@ public class AniDBIDsSelector : FilterExpression<IReadOnlySet<string>>
             return false;
         }
 
-        return Equals((AniDBIDsSelector)obj);
+        return Equals((AnidbAnimeIDsSelector)obj);
     }
 
     public override int GetHashCode()
@@ -46,12 +45,12 @@ public class AniDBIDsSelector : FilterExpression<IReadOnlySet<string>>
         return GetType().FullName!.GetHashCode();
     }
 
-    public static bool operator ==(AniDBIDsSelector left, AniDBIDsSelector right)
+    public static bool operator ==(AnidbAnimeIDsSelector left, AnidbAnimeIDsSelector right)
     {
         return Equals(left, right);
     }
 
-    public static bool operator !=(AniDBIDsSelector left, AniDBIDsSelector right)
+    public static bool operator !=(AnidbAnimeIDsSelector left, AnidbAnimeIDsSelector right)
     {
         return !Equals(left, right);
     }

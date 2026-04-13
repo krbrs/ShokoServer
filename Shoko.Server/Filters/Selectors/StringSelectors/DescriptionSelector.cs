@@ -3,18 +3,17 @@ using Shoko.Abstractions.Filtering;
 
 namespace Shoko.Server.Filters.Selectors.StringSelectors;
 
-// TODO: REMOVE THIS FILTER EXPRESSION SOMETIME IN THE FUTURE AFTER THE LEGACY FILTERS ARE REMOVED!!1!
-public class SortingNameSelector : FilterExpression<string>
+public class DescriptionSelector : FilterExpression<string>
 {
-    public override string HelpDescription => "This returns the sorting name of a filterable";
+    public override string HelpDescription => "This returns the description of a filterable";
     public override FilterExpressionGroup Group => FilterExpressionGroup.Selector;
 
     public override string Evaluate(IFilterableInfo filterable, IFilterableUserInfo userInfo, DateTime? time)
     {
-        return filterable.SortName;
+        return filterable.Description;
     }
 
-    protected bool Equals(SortingNameSelector other)
+    protected bool Equals(DescriptionSelector other)
     {
         return base.Equals(other);
     }
@@ -36,7 +35,7 @@ public class SortingNameSelector : FilterExpression<string>
             return false;
         }
 
-        return Equals((SortingNameSelector)obj);
+        return Equals((DescriptionSelector)obj);
     }
 
     public override int GetHashCode()
@@ -44,12 +43,12 @@ public class SortingNameSelector : FilterExpression<string>
         return GetType().FullName!.GetHashCode();
     }
 
-    public static bool operator ==(SortingNameSelector left, SortingNameSelector right)
+    public static bool operator ==(DescriptionSelector left, DescriptionSelector right)
     {
         return Equals(left, right);
     }
 
-    public static bool operator !=(SortingNameSelector left, SortingNameSelector right)
+    public static bool operator !=(DescriptionSelector left, DescriptionSelector right)
     {
         return !Equals(left, right);
     }

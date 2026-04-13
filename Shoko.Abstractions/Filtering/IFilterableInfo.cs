@@ -10,24 +10,46 @@ namespace Shoko.Abstractions.Filtering;
 public interface IFilterableInfo
 {
     /// <summary>
-    /// Name
+    /// Preferred name of the filterable.
     /// </summary>
     string Name { get; }
 
     /// <summary>
-    /// All Names for the group and series within
+    /// Sort name of the filterable. An altered version of <see cref="Name"/>.
+    /// </summary>
+    string SortName { get; }
+
+    /// <summary>
+    /// Main name of the filterable. Will be the same as <see cref="Name"/> if
+    /// not available for the filterable.
+    /// </summary>
+    string MainName { get; }
+
+    /// <summary>
+    /// Original name of the filterable. Will be the same as <see cref="Name"/>
+    /// if not available for the filterable.
+    /// </summary>
+    string OriginalName { get; }
+
+    /// <summary>
+    /// All names for the group and series within the filterable.
     /// </summary>
     IReadOnlySet<string> Names { get; }
 
     /// <summary>
-    /// All AniDB IDs for the series
+    /// Description of the filterable.
     /// </summary>
-    IReadOnlySet<string> AniDBIDs { get; }
+    string Description { get; }
 
     /// <summary>
-    /// Sorting Name
+    /// All descriptions for the group and series within the filterable.
     /// </summary>
-    string SortingName { get; }
+    IReadOnlySet<string> Descriptions { get; }
+
+    /// <summary>
+    /// All Shoko IDs for the series in the filterable.
+    /// </summary>
+    IReadOnlySet<string> SeriesIDs { get; }
 
     /// <summary>
     /// The group's ID. Will be the closest group's ID. So for groups it will be
@@ -46,9 +68,27 @@ public interface IFilterableInfo
     IReadOnlySet<string> GroupIDs { get; }
 
     /// <summary>
-    /// The number of series in a group
+    /// All AniDB IDs for the series in the filterable.
+    /// </summary>
+    IReadOnlySet<string> AnidbAnimeIDs { get; }
+
+    /// <summary>
+    /// The number of series within the filterable. Will always be one for
+    /// series. Will never be below one for groups.
     /// </summary>
     int SeriesCount { get; }
+
+    /// <summary>
+    /// The number of groups directly within the filterable. Will always be zero
+    /// for series.
+    /// </summary>
+    int GroupCount { get; }
+
+    /// <summary>
+    /// The total number of groups within the filterable. Will always be zero
+    /// for series.
+    /// </summary>
+    int TotalGroupCount { get; }
 
     /// <summary>
     /// Number of Missing Episodes

@@ -8,6 +8,7 @@ using Shoko.Server.Extensions;
 using Shoko.Server.MediaInfo;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
+using Shoko.Abstractions.Metadata;
 
 #nullable enable
 namespace Shoko.Server.Filters;
@@ -22,6 +23,12 @@ public static class FilterExtensions
         {
             NameDelegate = () =>
                 series.Title,
+            MainNameDelegate = () =>
+                series.AniDB_Anime?.MainTitle ?? string.Empty,
+            OriginalNameDelegate = () =>
+                series.AniDB_Anime?.OriginalTitle ?? string.Empty,
+            SortNameDelegate = () =>
+                series.Title.ToSortName(),
             NamesDelegate = () =>
             {
                 var titles = series.Titles.Select(t => t.Value).ToHashSet();
@@ -30,17 +37,22 @@ public static class FilterExtensions
 
                 return titles;
             },
-            AniDBIDsDelegate = () =>
-                new HashSet<string>() { series.AniDB_ID.ToString() },
-            SortingNameDelegate = () =>
-                series.Title.ToSortName(),
+            DescriptionDelegate = () =>
+                series.PreferredOverview?.Value ?? string.Empty,
+            DescriptionsDelegate = () =>
+                (series as ISeries)!.Descriptions.Select(a => a.Value).ToHashSet(),
+            SeriesIDsDelegate = () => new HashSet<string>() { series.AnimeSeriesID.ToString() },
             GroupIDDelegate = () =>
                 series.AnimeGroupID,
             TopLevelGroupIDDelegate = () =>
                 series.TopLevelAnimeGroup.AnimeGroupID,
             GroupIDsDelegate = () =>
                 series.AllGroupsAbove.Select(a => a.AnimeGroupID.ToString()).ToHashSet(),
+            AnidbAnimeIDsDelegate = () =>
+                new HashSet<string>() { series.AniDB_ID.ToString() },
             SeriesCountDelegate = () => 1,
+            GroupCountDelegate = () => 0,
+            TotalGroupCountDelegate = () => 0,
             AirDateDelegate = () =>
                 series.AniDB_Anime?.AirDate,
             MissingEpisodesDelegate = () =>
@@ -207,6 +219,12 @@ public static class FilterExtensions
         {
             NameDelegate = () =>
                 group.GroupName,
+            MainNameDelegate = () =>
+                group.GroupName,
+            OriginalNameDelegate = () =>
+                group.GroupName,
+            SortNameDelegate = () =>
+                group.GroupName.ToSortName(),
             NamesDelegate = () =>
             {
                 var result = new HashSet<string>() { group.GroupName };
@@ -215,18 +233,26 @@ public static class FilterExtensions
                 result.UnionWith(series.SelectMany(a => a.Titles.Select(t => t.Value)));
                 return result;
             },
-            AniDBIDsDelegate = () =>
-                series.Select(a => a.AniDB_ID.ToString()).ToHashSet(),
-            SortingNameDelegate = () =>
-                group.GroupName.ToSortName(),
+            DescriptionDelegate = () =>
+                group.Description,
+            DescriptionsDelegate = () =>
+                new HashSet<string> { group.Description }.Union((series as ISeries)!.Descriptions.Select(a => a.Value)).ToHashSet(),
             GroupIDDelegate = () =>
                 group.AnimeGroupID,
-            TopLevelGroupIDDelegate = () =>
-                group.TopLevelAnimeGroup.AnimeGroupID,
+            SeriesIDsDelegate = () =>
+                series.Select(a => a.AnimeSeriesID.ToString()).ToHashSet(),
             GroupIDsDelegate = () =>
                 group.AllGroupsAbove.Prepend(group).Select(a => a.AnimeGroupID.ToString()).ToHashSet(),
+            TopLevelGroupIDDelegate = () =>
+                group.TopLevelAnimeGroup.AnimeGroupID,
+            AnidbAnimeIDsDelegate = () =>
+                series.Select(a => a.AniDB_ID.ToString()).ToHashSet(),
             SeriesCountDelegate = () =>
                 series.Count,
+            GroupCountDelegate = () =>
+                group.Children.Count,
+            TotalGroupCountDelegate = () =>
+                group.AllChildren.Count(),
             AirDateDelegate = () =>
                 series.Select(a => a.AirDate).DefaultIfEmpty(DateTime.MaxValue).Min(),
             LastAirDateDelegate = () =>

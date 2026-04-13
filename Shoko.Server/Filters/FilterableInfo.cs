@@ -29,18 +29,24 @@ public class Filterable : IFilterableInfo
     private readonly Lazy<int> _missingEpisodesCollecting;
     private readonly Lazy<int> _videoFiles;
     private readonly Lazy<string> _name;
+    private readonly Lazy<string> _mainName;
+    private readonly Lazy<string> _originalName;
+    private readonly Lazy<string> _sortName;
     private readonly Lazy<IReadOnlySet<string>> _names;
-    private readonly Lazy<IReadOnlySet<string>> _aniDbIds;
+    private readonly Lazy<string> _description;
+    private readonly Lazy<IReadOnlySet<string>> _descriptions;
+    private readonly Lazy<IReadOnlySet<string>> _anidbAnimeIds;
     private readonly Lazy<IReadOnlySet<string>> _resolutions;
     private readonly Lazy<IReadOnlySet<string>> _managedFolderIDs;
     private readonly Lazy<IReadOnlySet<string>> _managedFolderNames;
     private readonly Lazy<IReadOnlySet<string>> _filePaths;
     private readonly Lazy<IReadOnlySet<(int year, YearlySeason season)>> _seasons;
     private readonly Lazy<int> _seriesCount;
+    private readonly Lazy<int> _groupCount;
+    private readonly Lazy<int> _totalGroupCount;
     private readonly Lazy<IReadOnlySet<string>> _sharedAudioLanguages;
     private readonly Lazy<IReadOnlySet<string>> _sharedSubtitleLanguages;
     private readonly Lazy<IReadOnlySet<string>> _sharedVideoSources;
-    private readonly Lazy<string> _sortingName;
     private readonly Lazy<IReadOnlySet<string>> _subtitleLanguages;
     private readonly Lazy<IReadOnlySet<string>> _anidbTagIDs;
     private readonly Lazy<IReadOnlySet<string>> _anidbTags;
@@ -57,12 +63,34 @@ public class Filterable : IFilterableInfo
     private readonly Lazy<int> _groupID;
     private readonly Lazy<int> _topLevelGroupID;
     private readonly Lazy<IReadOnlySet<string>> _groupIDs;
+    private readonly Lazy<IReadOnlySet<string>> _seriesIDs;
 
     public string Name => _name.Value;
 
     public required Func<string> NameDelegate
     {
         init => _name = new Lazy<string>(value);
+    }
+
+    public string MainName => _mainName.Value;
+
+    public required Func<string> MainNameDelegate
+    {
+        init => _mainName = new Lazy<string>(value);
+    }
+
+    public string OriginalName => _originalName.Value;
+
+    public required Func<string> OriginalNameDelegate
+    {
+        init => _originalName = new Lazy<string>(value);
+    }
+
+    public string SortName => _sortName.Value;
+
+    public required Func<string> SortNameDelegate
+    {
+        init => _sortName = new Lazy<string>(value);
     }
 
     public IReadOnlySet<string> Names => _names.Value;
@@ -72,18 +100,25 @@ public class Filterable : IFilterableInfo
         init => _names = new Lazy<IReadOnlySet<string>>(value);
     }
 
-    public IReadOnlySet<string> AniDBIDs => _aniDbIds.Value;
+    public string Description => _description.Value;
 
-    public required Func<IReadOnlySet<string>> AniDBIDsDelegate
+    public required Func<string> DescriptionDelegate
     {
-        init => _aniDbIds = new Lazy<IReadOnlySet<string>>(value);
+        init => _description = new Lazy<string>(value);
     }
 
-    public string SortingName => _sortingName.Value;
+    public IReadOnlySet<string> Descriptions => _descriptions.Value;
 
-    public required Func<string> SortingNameDelegate
+    public required Func<IReadOnlySet<string>> DescriptionsDelegate
     {
-        init => _sortingName = new Lazy<string>(value);
+        init => _descriptions = new Lazy<IReadOnlySet<string>>(value);
+    }
+
+    public IReadOnlySet<string> SeriesIDs => _seriesIDs.Value;
+
+    public required Func<IReadOnlySet<string>> SeriesIDsDelegate
+    {
+        init => _seriesIDs = new Lazy<IReadOnlySet<string>>(value);
     }
 
     public int GroupID => _groupID.Value;
@@ -107,11 +142,32 @@ public class Filterable : IFilterableInfo
         init => _groupIDs = new Lazy<IReadOnlySet<string>>(value);
     }
 
+    public IReadOnlySet<string> AnidbAnimeIDs => _anidbAnimeIds.Value;
+
+    public required Func<IReadOnlySet<string>> AnidbAnimeIDsDelegate
+    {
+        init => _anidbAnimeIds = new Lazy<IReadOnlySet<string>>(value);
+    }
+
     public int SeriesCount => _seriesCount.Value;
 
     public required Func<int> SeriesCountDelegate
     {
         init => _seriesCount = new Lazy<int>(value);
+    }
+
+    public int GroupCount => _groupCount.Value;
+
+    public required Func<int> GroupCountDelegate
+    {
+        init => _groupCount = new Lazy<int>(value);
+    }
+
+    public int TotalGroupCount => _totalGroupCount.Value;
+
+    public required Func<int> TotalGroupCountDelegate
+    {
+        init => _totalGroupCount = new Lazy<int>(value);
     }
 
     public int MissingEpisodes => _missingEpisodes.Value;

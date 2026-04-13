@@ -235,6 +235,8 @@ public class AniDB_Anime : IAnidbAnime
 
     public string Title => (PreferredTitle ?? DefaultTitle).Value;
 
+    public string OriginalTitle => GetOriginalTitle(Titles) ?? MainTitle;
+
     private ITitle? _defaultTitle = null;
 
     public ITitle DefaultTitle
@@ -325,6 +327,37 @@ public class AniDB_Anime : IAnidbAnime
             return _preferredTitle = null;
         }
     }
+
+    private static string? GetOriginalTitle(IReadOnlyList<ITitle> titles)
+        => GetTitleForLanguage(titles, GuessOriginLanguage(titles));
+
+    private static string? GetTitleForLanguage(IReadOnlyList<ITitle> titles, params string?[] metadataLanguages)
+    {
+        foreach (var lang in metadataLanguages)
+        {
+            if (string.IsNullOrEmpty(lang))
+                continue;
+
+            var title = titles.FirstOrDefault(t => t.Type == TitleType.Official && t.LanguageCode == lang)?.Value;
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+        return null;
+    }
+
+    private static string[] GuessOriginLanguage(IReadOnlyList<ITitle> titles)
+    {
+        var langCode = GetMainLanguage(titles);
+        return langCode switch
+        {
+            "x-other" or "x-jat" => ["ja", "jap"],
+            "x-zht" => ["zn-hans", "zn-hant", "zn-c-mcm", "zn", "zht"],
+            _ => string.IsNullOrEmpty(langCode) ? [] : [langCode],
+        };
+    }
+
+    private static string GetMainLanguage(IReadOnlyList<ITitle> titles)
+        => titles.FirstOrDefault(t => t?.Type == TitleType.Main)?.LanguageCode ?? titles.FirstOrDefault()?.LanguageCode ?? "x-other";
 
     #endregion
 
