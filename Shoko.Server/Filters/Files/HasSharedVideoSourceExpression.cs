@@ -21,6 +21,7 @@ public class HasSharedVideoSourceExpression : FilterExpression<bool>, IWithStrin
         "camcorder",
         "vcd",
         "ld",
+        "film",
         "unk",
     ];
 

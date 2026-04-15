@@ -104,6 +104,7 @@ public class StoredReleaseInfo : IReleaseInfo, IReleaseGroup, IReleaseMediaInfo,
         ReleaseSource.Camera => "camcorder",
         ReleaseSource.VCD => "vcd",
         ReleaseSource.LaserDisc => "ld",
+        ReleaseSource.Film => "film",
         _ => "unk",
     };
 

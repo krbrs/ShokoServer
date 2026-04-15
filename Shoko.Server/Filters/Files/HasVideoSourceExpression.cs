@@ -24,6 +24,7 @@ public class HasVideoSourceExpression : FilterExpression<bool>, IWithStringParam
         "camcorder",
         "vcd",
         "ld",
+        "film",
         "unk",
     };
 
