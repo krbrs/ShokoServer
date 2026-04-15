@@ -297,9 +297,7 @@ public class SystemService : ISystemService
     }
 
     public Task WaitForStartupAsync()
-    {
-        throw new NotImplementedException();
-    }
+         => _startupTaskSource?.Task ?? Task.CompletedTask;
 
     private bool CheckBlockedFiles()
     {
