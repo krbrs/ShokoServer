@@ -16,7 +16,7 @@ public class RedirectConstraint : IActionConstraint
             return false;
 
         var settings = Utils.SettingsProvider.GetSettings();
-        return settings.Web.EnableWebUI && !string.Equals(settings.Web.WebUIPublicPath, "/", StringComparison.OrdinalIgnoreCase);
+        return settings.Web.EnableIndexRedirect && settings.Web.EnableWebUI && !string.Equals(settings.Web.WebUIPublicPath, "/", StringComparison.OrdinalIgnoreCase);
     }
 }
 

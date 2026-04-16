@@ -101,6 +101,37 @@ public class WebSettings
     public string SwaggerUIPrefix { get; set; } = "swagger";
 
     /// <summary>
+    ///   Enable the built-in index redirect available at <c>/</c>, redirecting
+    ///   the user to the <seealso cref="WebUIPrefix"/>.
+    /// </summary>
+    [Visibility(Advanced = true)]
+    [Display(Name = "Enable Index Redirect")]
+    [RequiresRestart]
+    [EnvironmentVariable("SHOKO_API_INDEX_REDIRECT_ENABLED")]
+    [DefaultValue(true)]
+    public bool EnableIndexRedirect { get; set; } = true;
+
+    /// <summary>
+    ///   Enable the built-in SignalR hubs available at <c>/signalr</c>.
+    /// </summary>
+    [Visibility(Advanced = true)]
+    [Display(Name = "Enable SignalR")]
+    [RequiresRestart]
+    [EnvironmentVariable("SHOKO_API_SIGNALR_ENABLED")]
+    [DefaultValue(true)]
+    public bool EnableSignalR { get; set; } = true;
+
+    /// <summary>
+    ///   Enable the built-in authentication API available at <c>/api/auth</c>.
+    /// </summary>
+    [Visibility(Advanced = true)]
+    [Display(Name = "Enable Auth API")]
+    [RequiresRestart]
+    [EnvironmentVariable("SHOKO_API_AUTH_ENABLED")]
+    [DefaultValue(true)]
+    public bool EnableAuthAPI { get; set; } = true;
+
+    /// <summary>
     /// Enable the deprecated API v1 endpoints.
     /// </summary>
     [Badge("Deprecated", Theme = DisplayColorTheme.Warning)]
@@ -132,10 +163,22 @@ public class WebSettings
     public bool EnableAPIv3 { get; set; } = true;
 
     /// <summary>
+    ///   Enable the built-in legacy Plex API available at <c>/plex</c>, once
+    ///   part of APIv2, but separated so that it can be toggled separately.
+    /// </summary>
+    [Badge("Deprecated", Theme = DisplayColorTheme.Warning)]
+    [Visibility(Advanced = true)]
+    [Display(Name = "Enable Legacy Plex API")]
+    [RequiresRestart]
+    [EnvironmentVariable("SHOKO_API_PLEX_LEGACY_ENABLED")]
+    [DefaultValue(true)]
+    public bool EnableLegacyPlexAPI { get; set; } = true;
+
+    /// <summary>
     /// Always use the developer exceptions page, even in production.
     /// </summary>
     [Badge("Debug", Theme = DisplayColorTheme.Warning)]
-    [Visibility(Advanced = true)]
+    [Visibility(Advanced = true, Size = DisplayElementSize.Large)]
     [Display(Name = "Always Use Developer Exceptions")]
     [RequiresRestart]
     [EnvironmentVariable("SHOKO_WEB_DEVELOPER_EXCEPTIONS")]
@@ -146,7 +189,7 @@ public class WebSettings
     /// <summary>
     /// The name of the client repo to use.
     /// </summary>
-    [Visibility(Advanced = true)]
+    [Visibility(Advanced = true, Size = DisplayElementSize.Large)]
     [Display(Name = "Client Repo Name")]
     [RegularExpression(@"^[a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+$")]
     [EnvironmentVariable("SHOKO_CLIENT_REPO")]
@@ -157,7 +200,7 @@ public class WebSettings
     /// The name of the server repo to use.
     /// </summary>
     [Badge("Advanced", Theme = DisplayColorTheme.Primary)]
-    [Visibility(Advanced = true)]
+    [Visibility(Advanced = true, Size = DisplayElementSize.Large)]
     [Display(Name = "Server Repo Name")]
     [EnvironmentVariable("SHOKO_SERVER_REPO")]
     [DefaultValue("ShokoAnime/ShokoServer")]

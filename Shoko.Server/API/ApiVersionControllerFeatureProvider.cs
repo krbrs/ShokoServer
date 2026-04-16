@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc.Controllers;
+using Shoko.Server.API.v0.Controllers;
 using Shoko.Server.Settings;
 
 namespace Shoko.Server.API;
@@ -31,6 +32,12 @@ public class ApiVersionControllerFeatureProvider(WebSettings webSettings) : Cont
         if (ns?.Contains(".API.v2.") == true && !webSettings.EnableAPIv2)
             return false;
         if (ns?.Contains(".API.v3.") == true && !webSettings.EnableAPIv3)
+            return false;
+        if (typeInfo == typeof(IndexRedirectController) && !webSettings.EnableIndexRedirect)
+            return false;
+        if (typeInfo == typeof(PlexWebhook) && !webSettings.EnableLegacyPlexAPI)
+            return false;
+        if (typeInfo == typeof(AuthenticationController) && !webSettings.EnableAuthAPI)
             return false;
         return true;
     }

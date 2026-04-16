@@ -488,11 +488,14 @@ public static class APIExtensions
         app.UseAuthentication();
         app.UseAuthorization();
 
-        app.UseEndpoints(conf =>
+        if (webSettings.EnableSignalR)
         {
-            conf.MapHub<LoggingHub>("/signalr/logging").RequireAuthorization();
-            conf.MapHub<AggregateHub>("/signalr/aggregate").RequireAuthorization();
-        });
+            app.UseEndpoints(conf =>
+            {
+                conf.MapHub<LoggingHub>("/signalr/logging").RequireAuthorization();
+                conf.MapHub<AggregateHub>("/signalr/aggregate").RequireAuthorization();
+            });
+        }
 
         foreach (var pluginInfo in pluginManager.GetPluginInfos().Where(p => p.IsActive && p.ApplicationRegistrationType is not null))
         {
