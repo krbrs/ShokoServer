@@ -12,6 +12,7 @@ using Shoko.Server.API.v3.Models.AniDB;
 using Shoko.Server.API.v3.Models.Common;
 using Shoko.Server.MediaInfo;
 using Shoko.Server.Models.Shoko;
+using Shoko.Server.Providers.AniDB.Release;
 using Shoko.Server.Repositories;
 using Shoko.Server.Services;
 
@@ -236,8 +237,16 @@ public class WebUI
                     // Release group criteria
                     if (groupByCriteria.Contains(FileSummaryGroupByCriteria.GroupName))
                     {
-                        groupByDetails.GroupName = releaseGroup?.Name ?? (releaseGroup is { Source: "AniDB" } ? "Unknown" : "None");
-                        groupByDetails.GroupNameShort = releaseGroup?.ShortName ?? (releaseGroup is { Source: "AniDB" } ? "Unk" : "-");
+                        if (releaseInfo?.ReleaseURI?.StartsWith(AnidbReleaseProvider.ReleasePrefix) ?? false)
+                        {
+                            groupByDetails.GroupName = releaseGroup?.Name ?? "Unknown";
+                            groupByDetails.GroupNameShort = releaseGroup?.ShortName ?? "Unk";
+                        }
+                        else
+                        {
+                            groupByDetails.GroupName = releaseGroup?.Name ?? "None";
+                            groupByDetails.GroupNameShort = releaseGroup?.ShortName ?? "-";
+                        }
                     }
 
                     // File criteria
