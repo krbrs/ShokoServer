@@ -35,9 +35,24 @@ public class AVDumpFilesJob : BaseJob<AVDumpHelper.AVDumpSession>
     }
 
     public override string Title => "AVDumping Files";
+
     public override string TypeName => "AVDump Files";
-    public override Dictionary<string, object> Details =>
-        Videos.Values.Select((value, index) => (index, value)).ToDictionary(a => a.index.ToString(), a => (object)a.value);
+
+    public override Dictionary<string, object> Details => Videos.Count switch
+    {
+        1 => new()
+        {
+            { "FileID", Videos.First().Key },
+            { "FilePath", Videos.First().Value },
+        },
+        > 1 => new()
+        {
+            { "Total Files", Videos.Count.ToString() + " files" },
+            { "First FileID", Videos.First().Key },
+            { "Last FileID", Videos.Last().Key },
+        },
+        _ => [],
+    };
 
     public override Task<AVDumpHelper.AVDumpSession> Process()
     {
