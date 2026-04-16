@@ -1,0 +1,29 @@
+using System.Collections.Generic;
+using System.Linq;
+
+using AbstractLogReadResult = Shoko.Abstractions.Logging.Models.LogReadResult;
+
+#nullable enable
+namespace Shoko.Server.API.v3.Models.Logging;
+
+/// <summary>
+/// API model containing paged log read data.
+/// </summary>
+public class LogReadResult
+{
+    /// <summary>
+    /// Next offset to continue reading from.
+    /// </summary>
+    public int NextOffset { get; }
+
+    /// <summary>
+    /// Returned log entries.
+    /// </summary>
+    public IReadOnlyList<LogEntry> Entries { get; }
+
+    public LogReadResult(AbstractLogReadResult result)
+    {
+        NextOffset = result.NextOffset;
+        Entries = result.Entries.Select(entry => new LogEntry(entry)).ToList();
+    }
+}

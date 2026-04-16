@@ -3,14 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using NLog;
-using NLog.Config;
-using NLog.Filters;
-using NLog.Targets;
-using NLog.Targets.Wrappers;
-using Quartz.Logging;
 using Shoko.Abstractions.Utilities;
-using Shoko.Server.API.SignalR.NLog;
 using Shoko.Server.Server;
 using Shoko.Server.Settings;
 
@@ -75,73 +68,6 @@ public static partial class Utils
         var instance = GetInstanceFromCommandLineArguments();
         if (string.IsNullOrWhiteSpace(instance) is false)
             DefaultInstance = instance;
-    }
-
-    public static void InitLogger()
-    {
-        var target = (FileTarget)LogManager.Configuration.FindTargetByName("file");
-        if (target != null)
-        {
-            target.FileName = Utils.ApplicationPath + "/logs/${shortdate}.log";
-        }
-
-#if LOGWEB
-            // Disable blackhole http info logs
-            LogManager.Configuration.LoggingRules.FirstOrDefault(r => r.LoggerNamePattern.StartsWith("Microsoft.AspNetCore"))?.DisableLoggingForLevel(LogLevel.Info);
-            LogManager.Configuration.LoggingRules.FirstOrDefault(r => r.LoggerNamePattern.StartsWith("Shoko.Server.API.Authentication"))?.DisableLoggingForLevel(LogLevel.Info);
-#endif
-#if DEBUG
-        // Enable debug logging
-        LogManager.Configuration.LoggingRules.FirstOrDefault(a => a.Targets.Contains(target))
-            ?.EnableLoggingForLevel(LogLevel.Debug);
-#endif
-
-        var signalrTarget =
-            new AsyncTargetWrapper(
-                new SignalRTarget { Name = "signalr", MaxLogsCount = 5000, Layout = "${message}${onexception:\\: ${exception:format=tostring}}" }, 50,
-                AsyncTargetWrapperOverflowAction.Discard);
-        LogManager.Configuration.AddTarget("signalr", signalrTarget);
-        LogManager.Configuration.LoggingRules.Add(new LoggingRule("*", LogLevel.Trace, signalrTarget));
-        var consoleTarget = LogManager.Configuration.FindTargetByName<ColoredConsoleTarget>("console");
-        if (consoleTarget != null)
-        {
-            consoleTarget.Layout = "${date:format=HH\\:mm\\:ss}| ${logger:shortname=true} --- ${message}${onexception:\\: ${exception:format=tostring}}";
-        }
-
-        foreach (var loggingRule in LogManager.Configuration.LoggingRules)
-        {
-            if (loggingRule.Targets.Contains(target) || loggingRule.Targets.Contains(consoleTarget) || loggingRule.Targets.Contains(signalrTarget))
-            {
-                loggingRule.FilterDefaultAction = FilterResult.Log;
-                loggingRule.Filters.Add(new ConditionBasedFilter()
-                {
-                    Action = FilterResult.Ignore,
-                    Condition = "(contains(message, 'password') or contains(message, 'token') or contains(message, 'key')) and starts-with(message, 'Settings.')"
-                });
-            }
-        }
-
-        LogProvider.SetLogProvider(new NLog.Extensions.Logging.NLogLoggerFactory());
-
-        LogManager.ReconfigExistingLoggers();
-    }
-
-    public static void SetTraceLogging(bool enabled)
-    {
-        var fileRule = LogManager.Configuration.LoggingRules.FirstOrDefault(a => a.Targets.Any(b => b is FileTarget));
-        var signalrRule = LogManager.Configuration.LoggingRules.FirstOrDefault(a => a.Targets.Any(b => b is SignalRTarget));
-        if (enabled)
-        {
-            fileRule?.EnableLoggingForLevels(LogLevel.Trace, LogLevel.Debug);
-            signalrRule?.EnableLoggingForLevels(LogLevel.Trace, LogLevel.Debug);
-        }
-        else
-        {
-            fileRule?.DisableLoggingForLevels(LogLevel.Trace, LogLevel.Debug);
-            signalrRule?.DisableLoggingForLevels(LogLevel.Trace, LogLevel.Debug);
-        }
-
-        LogManager.ReconfigExistingLoggers();
     }
 
     public static int GetScheduledHours(ScheduledUpdateFrequency freq)

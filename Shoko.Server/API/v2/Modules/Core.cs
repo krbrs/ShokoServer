@@ -13,6 +13,7 @@ using Newtonsoft.Json.Linq;
 using NLog;
 using Quartz;
 using Shoko.Abstractions.Extensions;
+using Shoko.Abstractions.Logging.Services;
 using Shoko.Abstractions.Metadata.Anidb;
 using Shoko.Abstractions.Metadata.Anidb.Services;
 using Shoko.Abstractions.User.Services;
@@ -25,7 +26,6 @@ using Shoko.Server.Repositories;
 using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.AniDB;
 using Shoko.Server.Scheduling.Jobs.Trakt;
-using Shoko.Server.Server;
 using Shoko.Server.Services;
 using Shoko.Server.Settings;
 using Shoko.Server.Utilities;
@@ -618,8 +618,8 @@ public class Core : BaseController
     [HttpGet("log/get")]
     public ActionResult StartRotateLogs()
     {
-        var rotator = HttpContext.RequestServices.GetRequiredService<LogRotator>();
-        rotator.Start();
+        var logService = HttpContext.RequestServices.GetRequiredService<ILogService>();
+        logService.StartMaintenance();
         return APIStatus.OK();
     }
 
@@ -672,7 +672,8 @@ public class Core : BaseController
     [HttpGet("log/get/{lines?}/{position?}")]
     public ActionResult<Dictionary<string, object>> GetLog(int lines = 10, int position = 0)
     {
-        var log_file = LogRotator.GetCurrentLogFile();
+        var logService = HttpContext.RequestServices.GetRequiredService<ILogService>();
+        var log_file = logService.GetCurrentLogFilePath();
         if (string.IsNullOrEmpty(log_file))
         {
             return APIStatus.NotFound("Could not find current log name. Sorry");
@@ -683,33 +684,24 @@ public class Core : BaseController
             return APIStatus.NotFound();
         }
 
-        var result = new Dictionary<string, object>();
-        var fs = System.IO.File.OpenRead(log_file);
-
-        if (position >= fs.Length)
+        var fileInfo = new FileInfo(log_file);
+        if (position >= fileInfo.Length)
         {
-            result.Add("position", fs.Length);
-            result.Add("lines", new string[] { });
-            return result;
-        }
-
-        var logLines = new List<string>();
-
-        var reader = new LogReader(fs, position);
-        for (var i = 0; i < lines; i++)
-        {
-            var line = reader.ReadLine();
-            if (line == null)
+            return new Dictionary<string, object>
             {
-                break;
-            }
-
-            logLines.Add(line);
+                ["position"] = fileInfo.Length,
+                ["lines"] = Array.Empty<string>()
+            };
         }
 
-        result.Add("position", reader.Position);
-        result.Add("lines", logLines.ToArray());
-        return result;
+        var readResult = logService.ReadCurrent(lines, position);
+        return new Dictionary<string, object>
+        {
+            ["position"] = readResult.NextOffset,
+            ["lines"] = readResult.Entries
+                .Select(entry => $"[{entry.ThreadId:yyyy-MM-dd} {entry.Timestamp:HH:mm:ss:fff}] {entry.Level}|{entry.Logger} > {entry.Message}{(entry.Exception is not null ? $": {entry.Exception}" : string.Empty)}")
+                .ToArray()
+        };
     }
 
     #endregion

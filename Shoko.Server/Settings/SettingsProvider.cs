@@ -59,7 +59,7 @@ public class SettingsProvider : ISettingsProvider, IDisposable
     private void OnSettingsSaved(object? sender, ConfigurationSavedEventArgs<ServerSettings> eventArgs)
     {
         // Always update the trace logging settings when the settings change.
-        Utils.SetTraceLogging(eventArgs.Configuration.TraceLog);
+        LogService.SetTraceLogging(eventArgs.Configuration.TraceLog);
 
         // Init language settings and react to changes.
         var shouldRenameAllGroups = false;

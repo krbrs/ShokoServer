@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Net;
-using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +26,7 @@ using Shoko.Abstractions.Core.Exceptions;
 using Shoko.Abstractions.Core.Services;
 using Shoko.Abstractions.Extensions;
 using Shoko.Abstractions.Filtering.Services;
+using Shoko.Abstractions.Logging.Services;
 using Shoko.Abstractions.Metadata.Anidb.Services;
 using Shoko.Abstractions.Metadata.Tmdb.Services;
 using Shoko.Abstractions.Metadata.Services;
@@ -49,7 +49,6 @@ using Shoko.Server.Providers.TraktTV;
 using Shoko.Server.Repositories;
 using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.Actions;
-using Shoko.Server.Server;
 using Shoko.Server.Services.Abstraction;
 using Shoko.Server.Services.Configuration;
 using Shoko.Server.Services.Connectivity;
@@ -71,6 +70,8 @@ public class SystemService : ISystemService
 
     private readonly PluginManager _pluginManager;
 
+    private readonly LogService _logService;
+
     private readonly ConfigurationService _configurationService;
 
     private readonly SettingsProvider _settingsProvider;
@@ -85,7 +86,7 @@ public class SystemService : ISystemService
         var args = Environment.GetCommandLineArgs();
 
         Utils.SetInstance();
-        Utils.InitLogger();
+        LogService.InitLogger(ApplicationPaths.Instance);
         var loggerFactory = LoggerFactory.Create(o => o.AddNLog());
 
         Version = PluginManager.GetVersionInformation();
@@ -94,6 +95,7 @@ public class SystemService : ISystemService
         _pluginManager = new(loggerFactory.CreateLogger<PluginManager>(), this, ApplicationPaths.Instance);
         _configurationService = new(loggerFactory, ApplicationPaths.Instance, _pluginManager);
         _settingsProvider = new(loggerFactory.CreateLogger<SettingsProvider>(), this, _configurationService.CreateProvider<ServerSettings>());
+        _logService = new(loggerFactory.CreateLogger<LogService>(), ApplicationPaths.Instance, _settingsProvider);
         _databaseBlockingTasks.Add(_startupTaskSource.Task);
 
         CanShutdown = args.Contains("--shutdown-enabled");
@@ -229,6 +231,12 @@ public class SystemService : ISystemService
             _logger.LogInformation("MediaInfo: {Version}", MediaInfoVersion ?? "Program NOT found");
             _logger.LogInformation("RHash: {Version}", RHashVersion ?? "Library NOT found");
 
+            StartupMessage = "Starting Log Service.";
+
+            _logService.StartMaintenance();
+
+            StartupMessage = "Log Service initialized.";
+
             StartupMessage = "Scanning for Plugins...";
 
             _pluginManager.ScanForPlugins();
@@ -242,12 +250,6 @@ public class SystemService : ISystemService
             Utils.ServiceContainer = _webHost.Services;
 
             StartupMessage = "Web Host & Services initialized.";
-
-            StartupMessage = "Starting Log Rotator.";
-
-            _webHost.Services.GetRequiredService<LogRotator>().Start();
-
-            StartupMessage = "Log Rotator initialized.";
 
             StartupMessage = "Initializing Plugins.";
 
@@ -339,7 +341,7 @@ public class SystemService : ISystemService
                     .UseKestrel(options => options.ListenAnyIP(settings.Web.Port))
                     .ConfigureApp()
                     .ConfigureServiceProvider()
-                    .UseStartup(_ => new Startup(this, _configurationService, _settingsProvider, _pluginManager))
+                    .UseStartup(_ => new Startup(this, _logService, _configurationService, _settingsProvider, _pluginManager))
                     .ConfigureLogging(logging =>
                     {
                         logging.ClearProviders();
@@ -355,12 +357,13 @@ public class SystemService : ISystemService
             )
             .Build();
 
-    private class Startup(SystemService systemService, IConfigurationService configurationService, ISettingsProvider settingsProvider, IPluginManager pluginManager)
+    private class Startup(SystemService systemService, ILogService logService, IConfigurationService configurationService, ISettingsProvider settingsProvider, IPluginManager pluginManager)
     {
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddSingleton(systemService);
             services.AddSingleton<ISystemService>(systemService);
+            services.AddSingleton(logService);
             services.AddSingleton(configurationService);
             services.AddSingleton(settingsProvider);
             services.AddSingleton(pluginManager);
@@ -368,7 +371,6 @@ public class SystemService : ISystemService
 
             services.AddSingleton<IPluginPackageManager, PluginPackageManager>();
             services.AddSingleton<FileWatcherService>();
-            services.AddSingleton<LogRotator>();
             services.AddSingleton<TraktTVHelper>();
             services.AddSingleton<TmdbImageService>();
             services.AddSingleton<TmdbLinkingService>();
