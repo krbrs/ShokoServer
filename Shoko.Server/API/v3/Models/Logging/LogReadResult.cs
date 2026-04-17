@@ -12,9 +12,10 @@ namespace Shoko.Server.API.v3.Models.Logging;
 public class LogReadResult
 {
     /// <summary>
-    /// Next offset to continue reading from.
+    /// Next offset to continue reading from, or null if there are no more
+    /// entries.
     /// </summary>
-    public int NextOffset { get; }
+    public uint? NextOffset { get; }
 
     /// <summary>
     /// Returned log entries.

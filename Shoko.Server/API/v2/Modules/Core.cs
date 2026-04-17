@@ -670,36 +670,16 @@ public class Core : BaseController
     /// <param name="position">position to seek</param>
     /// <returns></returns>
     [HttpGet("log/get/{lines?}/{position?}")]
-    public ActionResult<Dictionary<string, object>> GetLog(int lines = 10, int position = 0)
+    public ActionResult<Dictionary<string, object>> GetLog(uint lines = 10, uint position = 0)
     {
         var logService = HttpContext.RequestServices.GetRequiredService<ILogService>();
-        var log_file = logService.GetCurrentLogFilePath();
-        if (string.IsNullOrEmpty(log_file))
-        {
-            return APIStatus.NotFound("Could not find current log name. Sorry");
-        }
-
-        if (!System.IO.File.Exists(log_file))
-        {
-            return APIStatus.NotFound();
-        }
-
-        var fileInfo = new FileInfo(log_file);
-        if (position >= fileInfo.Length)
-        {
-            return new Dictionary<string, object>
-            {
-                ["position"] = fileInfo.Length,
-                ["lines"] = Array.Empty<string>()
-            };
-        }
-
-        var readResult = logService.ReadCurrent(lines, position);
+        var currentLog = logService.GetCurrentLogFile();
+        var readResult = logService.ReadLogFile(currentLog, position, lines);
         return new Dictionary<string, object>
         {
-            ["position"] = readResult.NextOffset,
+            ["position"] = readResult.NextOffset ?? (position + readResult.Entries.Count),
             ["lines"] = readResult.Entries
-                .Select(entry => $"[{entry.ThreadId:yyyy-MM-dd} {entry.Timestamp:HH:mm:ss:fff}] {entry.Level}|{entry.Logger} > {entry.Message}{(entry.Exception is not null ? $": {entry.Exception}" : string.Empty)}")
+                .Select(entry => entry.ToString("simple"))
                 .ToArray()
         };
     }

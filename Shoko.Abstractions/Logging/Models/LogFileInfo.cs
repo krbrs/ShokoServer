@@ -8,9 +8,9 @@ namespace Shoko.Abstractions.Logging.Models;
 public class LogFileInfo
 {
     /// <summary>
-    ///   Stable file identifier used in API/service methods.
+    ///   Stable log file identifier.
     /// </summary>
-    public required string Id { get; init; }
+    public required Guid ID { get; init; }
 
     /// <summary>
     ///   Display file name.
@@ -23,14 +23,14 @@ public class LogFileInfo
     public required string FullPath { get; init; }
 
     /// <summary>
-    ///   File size in bytes.
+    ///   File size in bytes at the time of retrieval.
     /// </summary>
     public required long Size { get; init; }
 
     /// <summary>
-    ///   Last modification timestamp in UTC.
+    ///   Indicates whether the file is the current log file.
     /// </summary>
-    public required DateTime LastModifiedAt { get; init; }
+    public required bool IsCurrent { get; init; }
 
     /// <summary>
     ///   Indicates whether the file is compressed.
@@ -41,4 +41,9 @@ public class LogFileInfo
     ///   Detected content format.
     /// </summary>
     public required LogFileFormat Format { get; init; }
+
+    /// <summary>
+    ///   Last modification timestamp in UTC.
+    /// </summary>
+    public required DateTime LastModifiedAt { get; init; }
 }

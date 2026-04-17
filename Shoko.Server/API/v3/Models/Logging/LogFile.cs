@@ -12,7 +12,7 @@ public class LogFile
     /// <summary>
     /// Log file identifier.
     /// </summary>
-    public string Id { get; }
+    public Guid ID { get; }
 
     /// <summary>
     /// File name.
@@ -20,9 +20,14 @@ public class LogFile
     public string Name { get; }
 
     /// <summary>
-    /// File size in bytes.
+    /// File size in bytes at the time of retrieval.
     /// </summary>
     public long Size { get; }
+
+    /// <summary>
+    /// Indicates whether the file is the current log file.
+    /// </summary>
+    public bool IsCurrent { get; }
 
     /// <summary>
     /// Indicates whether the file is compressed.
@@ -41,11 +46,12 @@ public class LogFile
 
     public LogFile(LogFileInfo file)
     {
-        Id = file.Id;
+        ID = file.ID;
         Name = file.FileName;
         Size = file.Size;
+        IsCurrent = file.IsCurrent;
         IsCompressed = file.IsCompressed;
         Format = file.Format.ToString().ToLowerInvariant();
-        LastModifiedAt = file.LastModifiedAt;
+        LastModifiedAt = file.LastModifiedAt.ToUniversalTime();
     }
 }

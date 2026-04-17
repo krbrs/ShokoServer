@@ -8,9 +8,10 @@ namespace Shoko.Abstractions.Logging.Models;
 public class LogReadResult
 {
     /// <summary>
-    ///   Next line offset to continue reading from.
+    ///   Next offset to continue reading from, or null if there are no more
+    ///   entries.
     /// </summary>
-    public required int NextOffset { get; init; }
+    public required uint? NextOffset { get; init; }
 
     /// <summary>
     ///   Returned log entries for the requested page.

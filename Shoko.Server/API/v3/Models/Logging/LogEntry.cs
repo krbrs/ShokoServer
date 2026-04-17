@@ -56,7 +56,7 @@ public class LogEntry
     public LogEntry(AbstractLogEntry entry)
     {
         Timestamp = entry.Timestamp;
-        Level = entry.Level;
+        Level = entry.Level.ToString();
         Logger = entry.Logger;
         Caller = entry.Caller;
         ThreadId = entry.ThreadId;

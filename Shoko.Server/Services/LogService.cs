@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Timers;
 using Microsoft.Extensions.Logging;
@@ -12,25 +13,25 @@ using NLog.Filters;
 using NLog.Targets;
 using NLog.Targets.Wrappers;
 using Quartz.Logging;
+using Shoko.Abstractions.Extensions;
 using Shoko.Abstractions.Logging.Models;
 using Shoko.Abstractions.Logging.Services;
 using Shoko.Abstractions.Plugin;
+using Shoko.Abstractions.Utilities;
 using Shoko.Server.API.SignalR.NLog;
 using Shoko.Server.Settings;
+
+using ELogLevel = Microsoft.Extensions.Logging.LogLevel;
+using NLogLevel = NLog.LogLevel;
 
 #nullable enable
 namespace Shoko.Server.Services;
 
 public class LogService(ILogger<LogService> logger, IApplicationPaths applicationPaths, ISettingsProvider settingsProvider) : ILogService
 {
-    private readonly Timer _timer = new(86400000) { AutoReset = true };
+    #region Maintenance
 
-    public string GetCurrentLogFilePath()
-    {
-        return LogManager.Configuration?.FindTargetByName("file") is not FileTarget fileTarget
-            ? string.Empty
-            : Path.GetFullPath(fileTarget.FileName.Render(new LogEventInfo { Level = NLog.LogLevel.Info }));
-    }
+    private readonly Timer _timer = new(86400000) { AutoReset = true };
 
     public void StartMaintenance()
     {
@@ -46,116 +47,72 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         CompressLogs();
     }
 
-    public IEnumerable<LogFileInfo> ListFiles()
+    #region Maintenance | Internals
+
+    private void HandleTimerElapsed(object? sender, ElapsedEventArgs e)
     {
-        var directory = EnsureLogDirectory();
-        return directory.GetFiles()
-            .OrderByDescending(file => file.LastWriteTimeUtc)
+        RunRotationMaintenance();
+    }
+
+    private void CompressLogs()
+    {
+        var settings = settingsProvider.GetSettings().LogRotator;
+        if (!settings.Zip)
+            return;
+        var currentLog = GetCurrentLogFilePath();
+        foreach (var file in EnsureLogDirectory().GetFiles("*.jsonl").Where(file => DetermineFormat(file) is ({ }, false) && !string.Equals(file.FullName, currentLog, StringComparison.OrdinalIgnoreCase)))
+        {
+            var destination = file.FullName + ".gz";
+            using var source = File.Open(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var destinationStream = File.Open(destination, FileMode.Create, FileAccess.Write, FileShare.Read);
+            using var gzip = new GZipStream(destinationStream, CompressionLevel.Optimal);
+            source.CopyTo(gzip);
+            file.Delete();
+        }
+    }
+
+    private void DeleteLogs()
+    {
+        var settings = settingsProvider.GetSettings().LogRotator;
+        if (!settings.Delete || string.IsNullOrEmpty(settings.Delete_Days) || !int.TryParse(settings.Delete_Days, out var days))
+            return;
+
+        var threshold = DateTime.UtcNow.AddDays(-days);
+        foreach (var file in EnsureLogDirectory().GetFiles().Where(file => DetermineFormat(file) is ({ }, true) && file.LastWriteTimeUtc < threshold))
+            file.Delete();
+    }
+
+    #endregion
+
+    #endregion
+
+    #region Log File Operations
+
+    public IReadOnlyList<LogFileInfo> GetAllLogFiles()
+        => EnsureLogDirectory().GetFiles()
             .Select(ToLogFileInfo)
-            .ToList();
-    }
-
-    public LogReadResult ReadCurrent(int offset = 0, int limit = 100)
-    {
-        var currentPath = GetCurrentLogFilePath();
-        if (string.IsNullOrWhiteSpace(currentPath) || !File.Exists(currentPath))
-            return new() { NextOffset = offset, Entries = [] };
-        var info = ToLogFileInfo(new FileInfo(currentPath));
-        return ReadLogFile(info, offset, limit, null, null);
-    }
-
-    public LogReadResult ReadFile(string fileId, int offset = 0, int limit = 100)
-    {
-        var file = ResolveFile(fileId);
-        return ReadLogFile(file, offset, limit, null, null);
-    }
-
-    public LogReadResult ReadRange(DateTime? from = null, DateTime? to = null, int offset = 0, int limit = 100)
-    {
-        if (limit <= 0)
-            return new() { NextOffset = offset, Entries = [] };
-
-        var files = ListFiles()
-            .Where(file => file.Format is LogFileFormat.JsonL)
-            .OrderBy(file => file.LastModifiedAt)
+            .WhereNotNull()
+            .OrderByDescending(fileInfo => fileInfo.IsCurrent)
+            .ThenByDescending(file => file.LastModifiedAt)
             .ToList();
 
-        var skipped = 0;
-        var nextOffset = offset;
-        var entries = new List<LogEntry>();
-        foreach (var file in files)
-        {
-            foreach (var entry in ReadEntries(file, from, to))
-            {
-                if (skipped < offset)
-                {
-                    skipped++;
-                    nextOffset++;
-                    continue;
-                }
-                if (entries.Count >= limit)
-                    return new() { NextOffset = nextOffset, Entries = entries };
-                entries.Add(entry);
-                nextOffset++;
-            }
-        }
-        return new() { NextOffset = nextOffset, Entries = entries };
-    }
+    public LogFileInfo GetCurrentLogFile()
+        => ToLogFileInfo(new FileInfo(GetCurrentLogFilePath()))!;
 
-    public LogDownloadResult OpenDownload(string fileId, bool decompress = false)
-    {
-        var file = ResolveFile(fileId);
-        if (decompress && file.IsCompressed)
-        {
-            if (file.Format is LogFileFormat.JsonL)
-            {
-                var stream = OpenGZipStream(file.FullPath);
-                return new()
-                {
-                    ContentType = "application/x-ndjson",
-                    FileName = Path.GetFileNameWithoutExtension(file.FileName),
-                    Stream = stream,
-                };
-            }
-            else
-            {
-                var stream = OpenZipEntryStream(file.FullPath, out var entryName);
-                return new()
-                {
-                    ContentType = "text/plain",
-                    FileName = entryName,
-                    Stream = stream,
-                };
-            }
-        }
+    public LogFileInfo? GetLogFileByID(Guid fileID)
+        => GetAllLogFiles().FirstOrDefault(file => file.ID == fileID);
 
-        var fileStream = File.Open(file.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        return new()
-        {
-            ContentType = (file.Format, file.IsCompressed) switch
-            {
-                (LogFileFormat.JsonL, true) => "application/gzip",
-                (LogFileFormat.JsonL, false) => "application/x-ndjson",
-                (LogFileFormat.Legacy, true) => "application/zip",
-                (LogFileFormat.Legacy, false) => "text/plain",
-                _ => "application/octet-stream",
-            },
-            FileName = file.FileName,
-            Stream = fileStream,
-        };
-    }
+    public LogReadResult ReadLogFile(LogFileInfo fileInfo, uint offset = 0, uint limit = 100, bool descending = false)
+        => ReadLogFileInternal(fileInfo, offset, limit, null, null, descending);
 
-    private LogReadResult ReadLogFile(LogFileInfo file, int offset, int limit, DateTime? from, DateTime? to)
+    private LogReadResult ReadLogFileInternal(LogFileInfo file, uint offset, uint limit, DateTime? from, DateTime? to, bool descending)
     {
         if (file.Format is not LogFileFormat.JsonL)
             throw new InvalidOperationException("Only JSONL logs support reading.");
-        if (limit <= 0)
-            return new() { NextOffset = offset, Entries = [] };
-
-        var skipped = 0;
+        uint skipped = 0;
         var nextOffset = offset;
         var entries = new List<LogEntry>();
-        foreach (var entry in ReadEntries(file, from, to))
+        foreach (var entry in ReadEntries(file, from, to, descending))
         {
             if (skipped < offset)
             {
@@ -163,7 +120,7 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
                 nextOffset++;
                 continue;
             }
-            if (entries.Count >= limit)
+            if (limit > 0 && entries.Count >= limit)
                 break;
             entries.Add(entry);
             nextOffset++;
@@ -171,91 +128,108 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         return new() { NextOffset = nextOffset, Entries = entries };
     }
 
-    private IEnumerable<LogEntry> ReadEntries(LogFileInfo file, DateTime? from, DateTime? to)
+    public LogDownloadResult DownloadLogFile(LogFileInfo fileInfo, string format = "simple")
     {
-        if (file.IsCompressed && file.FileName.EndsWith(".jsonl.gz", StringComparison.OrdinalIgnoreCase))
+        if (fileInfo.Format is LogFileFormat.JsonL)
         {
-            using var stream = OpenGZipStream(file.FullPath);
-            using var reader = new StreamReader(stream);
-            foreach (var entry in ParseLogEntries(reader, from, to))
-                yield return entry;
-            yield break;
-        }
-
-        using var fileStream = File.Open(file.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var fileReader = new StreamReader(fileStream);
-        foreach (var entry in ParseLogEntries(fileReader, from, to))
-            yield return entry;
-    }
-
-    private IEnumerable<LogEntry> ParseLogEntries(StreamReader reader, DateTime? from, DateTime? to)
-    {
-        while (reader.ReadLine() is { } line)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-            if (!TryParseLogEntry(line, out var entry))
-                continue;
-            if (from.HasValue && entry.Timestamp < from.Value)
-                continue;
-            if (to.HasValue && entry.Timestamp > to.Value)
-                continue;
-            yield return entry;
-        }
-    }
-
-    private bool TryParseLogEntry(string line, out LogEntry entry)
-    {
-        entry = null!;
-        try
-        {
-            using var document = JsonDocument.Parse(line);
-            var root = document.RootElement;
-
-            var timestamp = root.TryGetProperty("timestamp", out var timestampElement) &&
-                DateTime.TryParse(timestampElement.GetString(), out var ts)
-                ? ts.ToUniversalTime()
-                : DateTime.UtcNow;
-
-            var threadId = root.TryGetProperty("threadId", out var threadIdElement) &&
-                threadIdElement.GetString() is { } threadIdString && int.TryParse(threadIdString, out var parsedThreadId)
-                ? parsedThreadId
-                : 0;
-
-            var processId = root.TryGetProperty("processId", out var processIdElement) &&
-                processIdElement.GetString() is { } processIdString && int.TryParse(processIdString, out var parsedProcessId)
-                ? parsedProcessId
-                : 0;
-
-            entry = new()
+            var normalizedFormat = NormalizeDownloadFormat(format);
+            if (normalizedFormat is "json")
             {
-                Timestamp = timestamp,
-                Level = root.TryGetProperty("level", out var levelElement) ? levelElement.GetString() ?? string.Empty : string.Empty,
-                Logger = root.TryGetProperty("logger", out var loggerElement) ? loggerElement.GetString() ?? string.Empty : string.Empty,
-                Caller = root.TryGetProperty("caller", out var callerElement) ? callerElement.GetString() ?? string.Empty : string.Empty,
-                ThreadId = threadId,
-                ProcessId = processId,
-                Message = root.TryGetProperty("message", out var messageElement) ? messageElement.GetString() ?? string.Empty : string.Empty,
-                Exception = root.TryGetProperty("exception", out var exceptionElement) ? exceptionElement.GetString() : null,
+                var stream = fileInfo.IsCompressed
+                    ? OpenGZipStream(fileInfo.FullPath)
+                    : File.Open(fileInfo.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                return new()
+                {
+                    ContentType = "application/x-ndjson",
+                    FileName = fileInfo.FileName,
+                    Stream = stream,
+                };
+            }
+
+            var entries = ReadEntries(fileInfo);
+            var formattedStream = CreateFormattedStream(entries, normalizedFormat);
+            return new()
+            {
+                ContentType = "text/plain",
+                FileName = Path.ChangeExtension(fileInfo.FileName, ".log"),
+                Stream = formattedStream,
             };
-            return true;
         }
-        catch (Exception ex)
+
+        if (fileInfo.IsCompressed)
         {
-            logger.LogDebug(ex, "Skipped malformed log line.");
-            return false;
+            var stream = OpenZipEntryStream(fileInfo.FullPath, out var entryName);
+            return new()
+            {
+                ContentType = "text/plain",
+                FileName = entryName,
+                Stream = stream,
+            };
         }
+
+        return new()
+        {
+            ContentType = "text/plain",
+            FileName = fileInfo.FileName,
+            Stream = File.Open(fileInfo.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
+        };
     }
 
-    private LogFileInfo ResolveFile(string fileId)
-        => ListFiles().FirstOrDefault(f => string.Equals(f.Id, fileId, StringComparison.OrdinalIgnoreCase)) ??
-            throw new FileNotFoundException($"Unable to locate log file '{fileId}'.");
+    public void DeleteLogFile(LogFileInfo fileInfo)
+    {
+        if (fileInfo.IsCurrent)
+            throw new InvalidOperationException("Cannot delete the current log file.");
+        if (File.Exists(fileInfo.FullPath))
+            File.Delete(fileInfo.FullPath);
+    }
 
-    private static Stream OpenGZipStream(string fullPath)
-        => new GZipStream(
-            File.Open(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
-            CompressionMode.Decompress
-        );
+    #region Log File Operations | Internals
+
+    private string GetCurrentLogFilePath()
+        => LogManager.Configuration?.FindTargetByName("file") is not FileTarget fileTarget
+            ? string.Empty
+            : Path.GetFullPath(fileTarget.FileName.Render(new LogEventInfo { Level = NLogLevel.Info }));
+
+    private LogFileInfo? ToLogFileInfo(FileInfo file)
+    {
+        if (DetermineFormat(file) is not ({ } format, var isCompressed))
+            return null;
+
+        var fileName = ToDisplayFileName(file.Name, format, isCompressed);
+        var currentPath = GetCurrentLogFilePath();
+        return new()
+        {
+            ID = UuidUtility.GetV5(file.FullName),
+            FileName = fileName,
+            FullPath = file.FullName,
+            Size = file.Length,
+            IsCurrent = string.Equals(file.FullName, currentPath, StringComparison.OrdinalIgnoreCase),
+            LastModifiedAt = file.LastWriteTimeUtc,
+            IsCompressed = isCompressed,
+            Format = format,
+        };
+    }
+
+    private static (LogFileFormat? Format, bool IsCompressed) DetermineFormat(FileInfo file)
+    {
+        if (file.Extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase))
+            return (LogFileFormat.JsonL, false);
+        if (file.Name.EndsWith(".jsonl.gz", StringComparison.OrdinalIgnoreCase))
+            return (LogFileFormat.JsonL, true);
+        if (file.Name.EndsWith(".log", StringComparison.OrdinalIgnoreCase))
+            return (LogFileFormat.Legacy, false);
+        if (file.Extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            return (LogFileFormat.Legacy, true);
+        return default;
+    }
+
+    private static string ToDisplayFileName(string fileName, LogFileFormat format, bool isCompressed)
+        => (format, isCompressed) switch
+        {
+            (LogFileFormat.JsonL, true) => Path.GetFileNameWithoutExtension(fileName),
+            (LogFileFormat.Legacy, true) => Path.ChangeExtension(fileName, ".log"),
+            _ => fileName,
+        };
 
     private static Stream OpenZipEntryStream(string fullPath, out string entryName)
     {
@@ -272,79 +246,6 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         }
         entryName = entry.Name;
         return new WrappedZipStream(archive, entry.Open(), zipStream);
-    }
-
-    private void HandleTimerElapsed(object? sender, ElapsedEventArgs e)
-    {
-        RunRotationMaintenance();
-    }
-
-    private DirectoryInfo EnsureLogDirectory()
-    {
-        var currentLog = GetCurrentLogFilePath();
-        var directory = string.IsNullOrWhiteSpace(currentLog)
-            ? applicationPaths.LogsPath
-            : Path.GetDirectoryName(currentLog) ?? applicationPaths.LogsPath;
-        var info = new DirectoryInfo(directory);
-        if (!info.Exists)
-            info.Create();
-        return info;
-    }
-
-    private void CompressLogs()
-    {
-        var settings = settingsProvider.GetSettings().LogRotator;
-        if (!settings.Zip)
-            return;
-        var currentLog = GetCurrentLogFilePath();
-        foreach (var file in EnsureLogDirectory().GetFiles("*.jsonl")
-                     .Where(file => !string.Equals(file.FullName, currentLog, StringComparison.OrdinalIgnoreCase)))
-        {
-            var destination = file.FullName + ".gz";
-            using var source = File.Open(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var destinationStream = File.Open(destination, FileMode.Create, FileAccess.Write, FileShare.Read);
-            using var gzip = new GZipStream(destinationStream, CompressionLevel.Optimal);
-            source.CopyTo(gzip);
-            file.Delete();
-        }
-    }
-
-    private void DeleteLogs()
-    {
-        var settings = settingsProvider.GetSettings().LogRotator;
-        if (!settings.Delete || string.IsNullOrEmpty(settings.Delete_Days) || !int.TryParse(settings.Delete_Days, out var days))
-            return;
-        var threshold = DateTime.UtcNow.AddDays(-days);
-        foreach (var file in EnsureLogDirectory().GetFiles()
-                     .Where(file => file.LastWriteTimeUtc < threshold)
-                     .Where(file => file.Name.EndsWith(".jsonl.gz", StringComparison.OrdinalIgnoreCase) || file.Extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)))
-        {
-            file.Delete();
-        }
-    }
-
-    private static LogFileInfo ToLogFileInfo(FileInfo file)
-    {
-        var format = DetermineFormat(file);
-        return new()
-        {
-            Id = file.Name,
-            FileName = file.Name,
-            FullPath = file.FullName,
-            Size = file.Length,
-            LastModifiedAt = file.LastWriteTimeUtc,
-            IsCompressed = file.Name.EndsWith(".jsonl.gz", StringComparison.OrdinalIgnoreCase) || file.Extension.Equals(".zip", StringComparison.OrdinalIgnoreCase),
-            Format = format,
-        };
-    }
-
-    private static LogFileFormat DetermineFormat(FileInfo file)
-    {
-        if (file.Extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase))
-            return LogFileFormat.JsonL;
-        if (file.Name.EndsWith(".jsonl.gz", StringComparison.OrdinalIgnoreCase))
-            return LogFileFormat.JsonL;
-        return LogFileFormat.Legacy;
     }
 
     private sealed class WrappedZipStream(ZipArchive archive, Stream inner, Stream fileStream) : Stream
@@ -372,7 +273,289 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         }
     }
 
-    #region Static Helper
+    #endregion
+
+    #endregion
+
+    #region Range Operations
+
+    public LogReadResult ReadRange(DateTime? from = null, DateTime? to = null, uint offset = 0, uint limit = 100, bool descending = true)
+    {
+        var files = GetAllLogFiles()
+            .Where(file => file.Format is LogFileFormat.JsonL)
+            .OrderBy(file => file.LastModifiedAt, descending ? Comparer<DateTime>.Create((x, y) => y.CompareTo(x)) : Comparer<DateTime>.Default)
+            .ToList();
+
+        uint skipped = 0;
+        var nextOffset = offset;
+        var entries = new List<LogEntry>();
+        foreach (var file in files)
+        {
+            foreach (var entry in ReadEntries(file, from, to, descending))
+            {
+                if (skipped < offset)
+                {
+                    skipped++;
+                    nextOffset++;
+                    continue;
+                }
+
+                if (limit > 0 && entries.Count >= limit)
+                    return new() { NextOffset = nextOffset, Entries = entries };
+
+                entries.Add(entry);
+                nextOffset++;
+            }
+        }
+        return new() { NextOffset = nextOffset, Entries = entries };
+    }
+
+    public LogDownloadResult DownloadRange(DateTime? from = null, DateTime? to = null, string format = "simple")
+    {
+        var normalizedFormat = NormalizeDownloadFormat(format);
+        var entries = ReadRange(from, to, 0, 0).Entries;
+        var stream = CreateFormattedStream(entries, normalizedFormat);
+        return new()
+        {
+            ContentType = normalizedFormat is "json" ? "application/x-ndjson" : "text/plain",
+            FileName = BuildRangeDownloadFileName(from, to, normalizedFormat),
+            Stream = stream,
+        };
+    }
+
+    #region Range Operations | Internals
+
+    private static MemoryStream CreateFormattedStream(IEnumerable<LogEntry> entries, string format)
+    {
+        var content = entries
+            .Select(entry => entry.ToString(format))
+            .Join(Environment.NewLine);
+        return new MemoryStream(Encoding.UTF8.GetBytes(content));
+    }
+
+    private static string BuildRangeDownloadFileName(DateTime? from, DateTime? to, string format)
+    {
+        var suffix = format is "json" ? "jsonl" : "log";
+        var fromPart = from?.ToUniversalTime().ToString("yyyyMMddTHHmmssZ") ?? "min";
+        var toPart = to?.ToUniversalTime().ToString("yyyyMMddTHHmmssZ") ?? "now";
+        return $"range-{fromPart}-{toPart}.{suffix}";
+    }
+
+    #endregion
+
+    #endregion
+
+    #region Shared Internals
+
+    private DirectoryInfo EnsureLogDirectory()
+    {
+        var currentLog = GetCurrentLogFilePath();
+        var directory = string.IsNullOrWhiteSpace(currentLog)
+            ? applicationPaths.LogsPath
+            : Path.GetDirectoryName(currentLog) ?? applicationPaths.LogsPath;
+        var info = new DirectoryInfo(directory);
+        if (!info.Exists)
+            info.Create();
+        return info;
+    }
+
+    private bool TryParseLogEntry(string line, out LogEntry entry)
+    {
+        entry = null!;
+        try
+        {
+            using var document = JsonDocument.Parse(line);
+            var root = document.RootElement;
+
+            var timestamp = root.TryGetProperty("timestamp", out var timestampElement) &&
+                DateTime.TryParse(timestampElement.GetString(), out var ts)
+                ? ts.ToUniversalTime()
+                : DateTime.UtcNow;
+
+            var threadId = root.TryGetProperty("threadId", out var threadIdElement) &&
+                threadIdElement.GetString() is { } threadIdString && int.TryParse(threadIdString, out var parsedThreadId)
+                ? parsedThreadId
+                : 0;
+
+            var processId = root.TryGetProperty("processId", out var processIdElement) &&
+                processIdElement.GetString() is { } processIdString && int.TryParse(processIdString, out var parsedProcessId)
+                ? parsedProcessId
+                : 0;
+
+            var parsedLevel = root.TryGetProperty("level", out var levelElement) && NLogLevel.FromString(levelElement.GetString()!) is { } level
+                ? level.Ordinal switch
+                {
+                    0 => ELogLevel.Trace,
+                    1 => ELogLevel.Debug,
+                    2 => ELogLevel.Information,
+                    3 => ELogLevel.Warning,
+                    4 => ELogLevel.Error,
+                    5 => ELogLevel.Critical,
+                    6 or _ => ELogLevel.None,
+                }
+                : ELogLevel.Information;
+
+            entry = new()
+            {
+                Timestamp = timestamp,
+                Level = parsedLevel,
+                Logger = root.TryGetProperty("logger", out var loggerElement) ? loggerElement.GetString() ?? string.Empty : string.Empty,
+                Caller = root.TryGetProperty("caller", out var callerElement) ? callerElement.GetString() ?? string.Empty : string.Empty,
+                ThreadId = threadId,
+                ProcessId = processId,
+                Message = root.TryGetProperty("message", out var messageElement) ? messageElement.GetString() ?? string.Empty : string.Empty,
+                Exception = root.TryGetProperty("exception", out var exceptionElement) ? exceptionElement.GetString() : null,
+            };
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Skipped malformed log line.");
+            return false;
+        }
+    }
+
+    private static string NormalizeDownloadFormat(string? format)
+    {
+        var normalized = format?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "json" or "simple" or "full" or "legacy" => normalized,
+            _ => throw new InvalidOperationException("Invalid format. Supported formats are \"simple\", \"full\", and \"json\"."),
+        };
+    }
+
+    private IEnumerable<LogEntry> ReadEntries(LogFileInfo file, DateTime? from = null, DateTime? to = null, bool descending = false)
+    {
+        if (file.IsCompressed)
+        {
+            using var stream = OpenGZipStream(file.FullPath);
+            using var reader = new StreamReader(stream);
+            foreach (var entry in ParseLogEntries(ReadLinesForward(reader), from, to, descending))
+                yield return entry;
+            yield break;
+        }
+
+        if (descending)
+        {
+            foreach (var entry in ParseLogEntries(ReadLinesReverse(file.FullPath), from, to))
+                yield return entry;
+            yield break;
+        }
+
+        using var fileStream = File.Open(file.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var fileReader = new StreamReader(fileStream);
+        foreach (var entry in ParseLogEntries(ReadLinesForward(fileReader), from, to))
+            yield return entry;
+    }
+
+    private static IEnumerable<string> ReadLinesForward(StreamReader reader)
+    {
+        while (reader.ReadLine() is { } line)
+            yield return line;
+    }
+
+    private static IEnumerable<string> ReadLinesReverse(string fullPath)
+    {
+        const int bufferSize = 8192;
+        using var stream = File.Open(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        if (stream.Length == 0)
+            yield break;
+
+        var buffer = new byte[bufferSize];
+        var reversedLineBytes = new List<byte>(256);
+        var position = stream.Length;
+        var skipTrailingNewline = true;
+
+        while (position > 0)
+        {
+            var bytesToRead = (int)Math.Min(bufferSize, position);
+            position -= bytesToRead;
+            stream.Seek(position, SeekOrigin.Begin);
+            var bytesRead = stream.Read(buffer, 0, bytesToRead);
+            for (var i = bytesRead - 1; i >= 0; i--)
+            {
+                var currentByte = buffer[i];
+                if (currentByte == '\n')
+                {
+                    if (skipTrailingNewline && reversedLineBytes.Count == 0)
+                    {
+                        skipTrailingNewline = false;
+                        continue;
+                    }
+
+                    if (reversedLineBytes.Count == 0)
+                        continue;
+
+                    yield return DecodeReversedLine(reversedLineBytes);
+                    reversedLineBytes.Clear();
+                    continue;
+                }
+
+                if (currentByte != '\r')
+                    reversedLineBytes.Add(currentByte);
+
+                skipTrailingNewline = false;
+            }
+        }
+
+        if (reversedLineBytes.Count > 0)
+            yield return DecodeReversedLine(reversedLineBytes);
+    }
+
+    private static string DecodeReversedLine(List<byte> reversedLineBytes)
+    {
+        reversedLineBytes.Reverse();
+        return Encoding.UTF8.GetString(reversedLineBytes.ToArray());
+    }
+
+    private IEnumerable<LogEntry> ParseLogEntries(IEnumerable<string> lines, DateTime? from, DateTime? to, bool descending = false)
+    {
+        if (descending)
+        {
+            var entries = new List<LogEntry>();
+            foreach (var line in lines)
+            {
+                if (TryParseFilteredLine(line, from, to, out var entry))
+                    entries.Add(entry);
+            }
+
+            for (var i = entries.Count - 1; i >= 0; i--)
+                yield return entries[i];
+            yield break;
+        }
+
+        foreach (var line in lines)
+        {
+            if (TryParseFilteredLine(line, from, to, out var entry))
+                yield return entry;
+        }
+    }
+
+    private bool TryParseFilteredLine(string line, DateTime? from, DateTime? to, out LogEntry entry)
+    {
+        entry = null!;
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+        if (!TryParseLogEntry(line, out var parsedEntry))
+            return false;
+        if (from.HasValue && parsedEntry.Timestamp < from.Value)
+            return false;
+        if (to.HasValue && parsedEntry.Timestamp > to.Value)
+            return false;
+        entry = parsedEntry;
+        return true;
+    }
+
+    private static Stream OpenGZipStream(string fullPath)
+        => new GZipStream(
+            File.Open(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
+            CompressionMode.Decompress
+        );
+
+    #endregion
+
+    #region Static Methods
 
     public static void InitLogger(IApplicationPaths applicationPaths)
     {
@@ -394,7 +577,7 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 #if DEBUG
         // Enable debug logging
         config.LoggingRules.FirstOrDefault(a => target != null && a.Targets.Contains(target))
-            ?.EnableLoggingForLevel(NLog.LogLevel.Debug);
+            ?.EnableLoggingForLevel(NLogLevel.Debug);
 #endif
 
         var signalrTarget =
@@ -402,7 +585,7 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
                 new SignalRTarget { Name = "signalr", MaxLogsCount = 5000, Layout = "${message}${onexception:\\: ${exception:format=tostring}}" }, 50,
                 AsyncTargetWrapperOverflowAction.Discard);
         config.AddTarget("signalr", signalrTarget);
-        config.LoggingRules.Add(new LoggingRule("*", NLog.LogLevel.Trace, signalrTarget));
+        config.LoggingRules.Add(new LoggingRule("*", NLogLevel.Trace, signalrTarget));
         var consoleTarget = config.FindTargetByName<ColoredConsoleTarget>("console");
         consoleTarget?.Layout = "${date:format=HH\\:mm\\:ss}| ${logger:shortname=true} --- ${message}${onexception:\\: ${exception:format=tostring}}";
 
@@ -435,13 +618,13 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         var signalrRule = config.LoggingRules.FirstOrDefault(a => a.Targets.Any(b => b is SignalRTarget));
         if (enabled)
         {
-            fileRule?.EnableLoggingForLevels(NLog.LogLevel.Trace, NLog.LogLevel.Debug);
-            signalrRule?.EnableLoggingForLevels(NLog.LogLevel.Trace, NLog.LogLevel.Debug);
+            fileRule?.EnableLoggingForLevels(NLogLevel.Trace, NLogLevel.Debug);
+            signalrRule?.EnableLoggingForLevels(NLogLevel.Trace, NLogLevel.Debug);
         }
         else
         {
-            fileRule?.DisableLoggingForLevels(NLog.LogLevel.Trace, NLog.LogLevel.Debug);
-            signalrRule?.DisableLoggingForLevels(NLog.LogLevel.Trace, NLog.LogLevel.Debug);
+            fileRule?.DisableLoggingForLevels(NLogLevel.Trace, NLogLevel.Debug);
+            signalrRule?.DisableLoggingForLevels(NLogLevel.Trace, NLogLevel.Debug);
         }
 
         LogManager.ReconfigExistingLoggers();

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using Shoko.Abstractions.Plugin;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -33,7 +34,7 @@ public class LogServiceTests : IDisposable
     }
 
     [Fact]
-    public void ReadFile_ShouldApplyOffsetAndLimit_ForUncompressedJsonl()
+    public void ReadLogFile_ShouldApplyOffsetAndLimit_ForUncompressedJsonl()
     {
         var path = Path.Combine(_tempDirectory, "sample.jsonl");
         File.WriteAllLines(path,
@@ -44,15 +45,16 @@ public class LogServiceTests : IDisposable
         ]);
 
         var service = CreateService();
-        var result = service.ReadFile("sample.jsonl", 1, 1);
+        var file = GetFileByPath(service, path);
+        var result = service.ReadLogFile(file, 1, 1);
 
         Assert.Single(result.Entries);
         Assert.Equal("b", result.Entries[0].Message);
-        Assert.Equal(3, result.NextOffset);
+        Assert.Equal<uint?>(3, result.NextOffset);
     }
 
     [Fact]
-    public void ReadFile_ShouldApplyOffsetAndLimit_ForCompressedJsonl()
+    public void ReadLogFile_ShouldApplyOffsetAndLimit_ForCompressedJsonl()
     {
         var gzipPath = Path.Combine(_tempDirectory, "sample.jsonl.gz");
         using (var stream = File.Open(gzipPath, FileMode.Create))
@@ -64,38 +66,130 @@ public class LogServiceTests : IDisposable
         }
 
         var service = CreateService();
-        var result = service.ReadFile("sample.jsonl.gz", 1, 1);
+        var file = GetFileByPath(service, gzipPath);
+        var result = service.ReadLogFile(file, 1, 1);
 
         Assert.Single(result.Entries);
         Assert.Equal("two", result.Entries[0].Message);
-        Assert.Equal(3, result.NextOffset);
+        Assert.Equal<uint?>(3, result.NextOffset);
     }
 
     [Fact]
-    public void ReadRange_ShouldFilterByFromAndTo_AcrossMixedJsonlFiles()
+    public void ReadLogFile_ShouldReturnDescending_ForUncompressedJsonl()
+    {
+        var t1 = DateTime.UtcNow.AddMinutes(-3);
+        var t2 = DateTime.UtcNow.AddMinutes(-2);
+        var t3 = DateTime.UtcNow.AddMinutes(-1);
+        var path = Path.Combine(_tempDirectory, "descending.jsonl");
+        File.WriteAllLines(path,
+        [
+            MakeLine("a", t1),
+            MakeLine("b", t2),
+            MakeLine("c", t3),
+        ]);
+
+        var service = CreateService();
+        var file = GetFileByPath(service, path);
+        var result = service.ReadLogFile(file, 0, 0, true);
+
+        Assert.Equal(new[] { "c", "b", "a" }, result.Entries.Select(entry => entry.Message).ToArray());
+    }
+
+    [Fact]
+    public void ReadLogFile_ShouldReturnDescending_ForCompressedJsonl()
+    {
+        var gzipPath = Path.Combine(_tempDirectory, "descending-compressed.jsonl.gz");
+        using (var stream = File.Open(gzipPath, FileMode.Create))
+        using (var gzip = new GZipStream(stream, CompressionLevel.Optimal))
+        using (var writer = new StreamWriter(gzip))
+        {
+            writer.WriteLine(MakeLine("one", DateTime.UtcNow.AddMinutes(-3)));
+            writer.WriteLine(MakeLine("two", DateTime.UtcNow.AddMinutes(-2)));
+            writer.WriteLine(MakeLine("three", DateTime.UtcNow.AddMinutes(-1)));
+        }
+
+        var service = CreateService();
+        var file = GetFileByPath(service, gzipPath);
+        var result = service.ReadLogFile(file, 0, 0, true);
+
+        Assert.Equal(new[] { "three", "two", "one" }, result.Entries.Select(entry => entry.Message).ToArray());
+    }
+
+    [Fact]
+    public void ReadLogFile_ShouldHandleMixedNewlines_WhenDescending()
+    {
+        var t1 = DateTime.UtcNow.AddMinutes(-3);
+        var t2 = DateTime.UtcNow.AddMinutes(-2);
+        var t3 = DateTime.UtcNow.AddMinutes(-1);
+        var path = Path.Combine(_tempDirectory, "mixed-newlines.jsonl");
+        var content = $"{MakeLine("first", t1)}\r\n{MakeLine("second", t2)}\n{MakeLine("third", t3)}";
+        File.WriteAllText(path, content);
+
+        var service = CreateService();
+        var file = GetFileByPath(service, path);
+        var result = service.ReadLogFile(file, 0, 0, true);
+
+        Assert.Equal(new[] { "third", "second", "first" }, result.Entries.Select(entry => entry.Message).ToArray());
+    }
+
+    [Fact]
+    public void ReadRange_ShouldReturnNewestFirst_ByDefault()
     {
         var t1 = DateTime.UtcNow.AddHours(-3);
         var t2 = DateTime.UtcNow.AddHours(-2);
         var t3 = DateTime.UtcNow.AddHours(-1);
 
-        File.WriteAllLines(Path.Combine(_tempDirectory, "plain.jsonl"),
+        var plainPath = Path.Combine(_tempDirectory, "plain.jsonl");
+        File.WriteAllLines(plainPath,
         [
             MakeLine("old", t1),
             MakeLine("middle", t2),
         ]);
+        File.SetLastWriteTimeUtc(plainPath, t2);
 
-        using (var stream = File.Open(Path.Combine(_tempDirectory, "compressed.jsonl.gz"), FileMode.Create))
+        var compressedPath = Path.Combine(_tempDirectory, "compressed.jsonl.gz");
+        using (var stream = File.Open(compressedPath, FileMode.Create))
         using (var gzip = new GZipStream(stream, CompressionLevel.Optimal))
         using (var writer = new StreamWriter(gzip))
         {
             writer.WriteLine(MakeLine("new", t3));
         }
+        File.SetLastWriteTimeUtc(compressedPath, t3);
 
         var service = CreateService();
-        var result = service.ReadRange(t2.AddMinutes(-1), t3.AddMinutes(-1), 0, 10);
+        var result = service.ReadRange(t1.AddMinutes(-1), t3.AddMinutes(1), 0, 0);
 
-        Assert.Single(result.Entries);
-        Assert.Equal("middle", result.Entries[0].Message);
+        Assert.Equal(new[] { "new", "middle", "old" }, result.Entries.Select(entry => entry.Message).ToArray());
+    }
+
+    [Fact]
+    public void ReadRange_ShouldReturnOldestFirst_WhenDescendingIsFalse()
+    {
+        var t1 = DateTime.UtcNow.AddHours(-3);
+        var t2 = DateTime.UtcNow.AddHours(-2);
+        var t3 = DateTime.UtcNow.AddHours(-1);
+
+        var plainPath = Path.Combine(_tempDirectory, "plain-range.jsonl");
+        File.WriteAllLines(plainPath,
+        [
+            MakeLine("old", t1),
+            MakeLine("middle", t2),
+        ]);
+        File.SetLastWriteTimeUtc(plainPath, t2);
+
+        var compressedPath = Path.Combine(_tempDirectory, "compressed-range.jsonl.gz");
+        using (var stream = File.Open(compressedPath, FileMode.Create))
+        using (var gzip = new GZipStream(stream, CompressionLevel.Optimal))
+        using (var writer = new StreamWriter(gzip))
+        {
+            writer.WriteLine(MakeLine("new", t3));
+        }
+        File.SetLastWriteTimeUtc(compressedPath, t3);
+
+        var service = CreateService();
+        var result = service.ReadRange(t1.AddMinutes(-1), t3.AddMinutes(1), 0, 0, false);
+
+        Assert.Equal(new[] { "old", "middle", "new" }, result.Entries.Select(entry => entry.Message).ToArray());
     }
 
     public void Dispose()
@@ -122,6 +216,9 @@ public class LogServiceTests : IDisposable
 
     private static string MakeLine(string message, DateTime timestamp)
         => "{\"timestamp\":\"" + timestamp.ToUniversalTime().ToString("O") +
-           "\",\"level\":\"Info\",\"logger\":\"Test\",\"caller\":\"Test::Method\",\"threadId\":1,\"message\":\"" +
+           "\",\"level\":\"Info\",\"logger\":\"Test\",\"caller\":\"Test::Method\",\"threadId\":\"1\",\"processId\":\"1\",\"message\":\"" +
            message + "\",\"context\":{\"source\":\"test\"}}";
+
+    private static Shoko.Abstractions.Logging.Models.LogFileInfo GetFileByPath(LogService service, string path)
+        => Assert.Single(service.GetAllLogFiles(), file => string.Equals(file.FullPath, path, StringComparison.OrdinalIgnoreCase));
 }
