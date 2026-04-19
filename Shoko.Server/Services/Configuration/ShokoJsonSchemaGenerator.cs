@@ -196,7 +196,7 @@ public class ShokoJsonSchemaGenerator(JsonSerializerSettings newtonsoftJsonSeria
 
     internal const string UiDefinition = "x-uiDefinition";
 
-    private const string ElementType = "elementType";
+    internal const string ElementType = "elementType";
 
     private const string ElementSize = "elementSize";
 

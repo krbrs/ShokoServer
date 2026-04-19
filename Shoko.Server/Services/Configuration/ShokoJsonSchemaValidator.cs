@@ -74,7 +74,10 @@ public partial class ShokoJsonSchemaValidator<TConfig>(ILogger logger, Configura
                     }
                     else if (base.Validate(parentToken, token, schema, schemaType, propertyName, propertyPath).Count == 0)
                     {
-                        if (schema.Type.HasFlag(JsonObjectType.String) && (envVar.Length < 2 || envVar[0] != '"' || envVar[^1] != '"') && (!schema.Type.HasFlag(JsonObjectType.Null) || envVar != "null"))
+                        if (
+                            (schema.Type.HasFlag(JsonObjectType.String) || uiDefinition[ShokoJsonSchemaGenerator.ElementType] is "enum") &&
+                            (envVar.Length < 2 || envVar[0] != '"' || envVar[^1] != '"') && (!schema.Type.HasFlag(JsonObjectType.Null) || envVar != "null")
+                        )
                             envVar = '"' + envVar.Replace(InvalidQuoteRegex(), "\\\"") + '"';
 
                         try
