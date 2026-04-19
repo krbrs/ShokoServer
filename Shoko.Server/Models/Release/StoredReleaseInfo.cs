@@ -227,7 +227,7 @@ public class StoredReleaseInfo : IReleaseInfo, IReleaseGroup, IReleaseMediaInfo,
         if (ReferenceEquals(this, other))
             return true;
 
-        return GetHashCode() != other.GetHashCode();
+        return GetHashCode() == other.GetHashCode();
     }
 
     public override bool Equals(object? obj)
