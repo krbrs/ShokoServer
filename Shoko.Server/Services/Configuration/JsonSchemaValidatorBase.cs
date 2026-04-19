@@ -40,7 +40,7 @@ public class JsonSchemaValidatorBase
         using var reader = new StringReader(jsonData);
         using var jsonReader = new JsonTextReader(reader) { DateParseHandling = DateParseHandling.None };
         var token = JToken.ReadFrom(jsonReader);
-        return (token, Validate(null, token, schema.ActualSchema, schemaType, null, token.Path));
+        return (token, Validate(null, token, schema, schemaType, null, token.Path));
     }
 
     /// <summary>
@@ -52,20 +52,21 @@ public class JsonSchemaValidatorBase
         if (token is null)
             return errors;
 
-        ValidateAnyOf(parentToken, token, schema, schemaType, propertyName, propertyPath, errors);
-        ValidateAllOf(parentToken, token, schema, schemaType, propertyName, propertyPath, errors);
-        ValidateOneOf(parentToken, token, schema, schemaType, propertyName, propertyPath, errors);
-        ValidateNot(parentToken, token, schema, schemaType, propertyName, propertyPath, errors);
-        ValidateType(token, schema, schemaType, propertyName, propertyPath, errors);
-        ValidateEnum(token, schema, schemaType, propertyName, propertyPath, errors);
-        ValidateProperties(token, schema, schemaType, propertyName, propertyPath, errors);
+        var actualSchema = schema.ActualSchema;
+        ValidateAnyOf(parentToken, token, actualSchema, schemaType, propertyName, propertyPath, errors);
+        ValidateAllOf(parentToken, token, actualSchema, schemaType, propertyName, propertyPath, errors);
+        ValidateOneOf(parentToken, token, actualSchema, schemaType, propertyName, propertyPath, errors);
+        ValidateNot(parentToken, token, actualSchema, schemaType, propertyName, propertyPath, errors);
+        ValidateType(token, actualSchema, schemaType, propertyName, propertyPath, errors);
+        ValidateEnum(token, actualSchema, schemaType, propertyName, propertyPath, errors);
+        ValidateProperties(token, actualSchema, schemaType, propertyName, propertyPath, errors);
 
         return errors;
     }
 
     protected virtual bool TryValidateChildSchema(JToken? parentToken, JToken token, JsonSchema schema, SchemaType schemaType, ValidationErrorKind errorKind, string property, string path, [NotNullWhen(false)] out ChildSchemaValidationError? error)
     {
-        var errors = Validate(parentToken, token, schema.ActualSchema, schemaType, property, path);
+        var errors = Validate(parentToken, token, schema, schemaType, property, path);
         if (errors.Count == 0)
         {
             error = null;
@@ -84,7 +85,7 @@ public class JsonSchemaValidatorBase
         if (schema.AnyOf.Count == 0)
             return;
 
-        var propertyErrors = schema.AnyOf.ToDictionary(s => s, s => Validate(parentToken, token, s.ActualSchema, schemaType, propertyName, propertyPath));
+        var propertyErrors = schema.AnyOf.ToDictionary(s => s, s => Validate(parentToken, token, s, schemaType, propertyName, propertyPath));
         if (propertyErrors.All(s => s.Value.Count is not 0))
             errors.Add(new ChildSchemaValidationError(ValidationErrorKind.NotAnyOf, propertyName, propertyPath, propertyErrors, token, schema));
     }
@@ -98,7 +99,7 @@ public class JsonSchemaValidatorBase
         if (schema.AllOf.Count == 0)
             return;
 
-        var propertyErrors = schema.AllOf.ToDictionary(s => s, s => Validate(parentToken, token, s.ActualSchema, schemaType, propertyName, propertyPath));
+        var propertyErrors = schema.AllOf.ToDictionary(s => s, s => Validate(parentToken, token, s, schemaType, propertyName, propertyPath));
         if (propertyErrors.Any(s => s.Value.Count is not 0))
             errors.Add(new ChildSchemaValidationError(ValidationErrorKind.NotAllOf, propertyName, propertyPath, propertyErrors, token, schema));
     }
@@ -112,7 +113,7 @@ public class JsonSchemaValidatorBase
         if (schema.OneOf.Count == 0)
             return;
 
-        var propertyErrors = schema.OneOf.ToDictionary(s => s, s => Validate(parentToken, token, s.ActualSchema, schemaType, propertyName, propertyPath));
+        var propertyErrors = schema.OneOf.ToDictionary(s => s, s => Validate(parentToken, token, s, schemaType, propertyName, propertyPath));
         if (propertyErrors.Count(s => s.Value.Count == 0) != 1)
             errors.Add(new ChildSchemaValidationError(ValidationErrorKind.NotOneOf, propertyName, propertyPath, propertyErrors, token, schema));
     }
@@ -123,7 +124,7 @@ public class JsonSchemaValidatorBase
 
     private void ValidateNot(JToken? parentToken, JToken token, JsonSchema schema, SchemaType schemaType, string? propertyName, string propertyPath, List<ValidationError> errors)
     {
-        if (schema.Not is not null && Validate(parentToken, token, schema.Not, schemaType, propertyName, propertyPath).Count == 0)
+        if (schema.Not is { } notSchema && Validate(parentToken, token, notSchema, schemaType, propertyName, propertyPath).Count == 0)
             errors.Add(new ValidationError(ValidationErrorKind.ExcludedSchemaValidates, propertyName, propertyPath, token, schema));
     }
 
@@ -405,7 +406,7 @@ public class JsonSchemaValidatorBase
         {
             var subPropertyPath = GetPropertyPath(propertyPath, propertyInfo.Key);
             TryGetPropertyWithStringComparer(obj, propertyInfo.Key, out var value);
-            var propertyErrors = Validate(obj, value, propertyInfo.Value.ActualSchema, schemaType, propertyInfo.Key, subPropertyPath);
+            var propertyErrors = Validate(obj, value, propertyInfo.Value, schemaType, propertyInfo.Key, subPropertyPath);
             errors.AddRange(propertyErrors);
         }
 
