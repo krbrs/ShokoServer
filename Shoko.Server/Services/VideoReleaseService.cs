@@ -330,6 +330,18 @@ public class VideoReleaseService(
 
     #region Get Current Data
 
+    public IReadOnlyList<string> GetStoredReleaseProviderNames()
+    {
+        var hashSet = new HashSet<string>();
+        foreach (var releaseInfo in releaseInfoRepository.GetAll())
+            foreach (var providerName in releaseInfo.ProviderName.Split('+', StringSplitOptions.None | StringSplitOptions.RemoveEmptyEntries))
+                hashSet.Add(providerName);
+
+        return hashSet
+            .Order()
+            .ToList();
+    }
+
     public IEnumerable<IReleaseInfo> GetAllReleases(IEnumerable<string>? releaseProviders = null)
     {
         var includeProviders = releaseProviders?

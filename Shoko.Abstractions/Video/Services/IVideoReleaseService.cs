@@ -162,6 +162,14 @@ public interface IVideoReleaseService
     ReleaseProviderInfo GetProviderInfo<TProvider>() where TProvider : class, IReleaseInfoProvider;
 
     /// <summary>
+    ///   Gets a read-only list of all stored release provider names.
+    /// </summary>
+    /// <returns>
+    ///   All stored release provider names.
+    /// </returns>
+    IReadOnlyList<string> GetStoredReleaseProviderNames();
+
+    /// <summary>
     ///   Gets all releases in the local database.
     /// </summary>
     /// <param name="releaseProviders">

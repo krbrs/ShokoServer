@@ -374,6 +374,14 @@ public class ReleaseInfoController(ISettingsProvider settingsProvider, IPluginMa
     }
 
     /// <summary>
+    /// Get all release provider names stored in the local database.
+    /// </summary>
+    /// <returns>A list of all the release provider names stored in the local database.</returns>
+    [HttpGet("Release/ProviderNames")]
+    public IReadOnlyList<string> GetReleaseProviderNames()
+        => videoReleaseService.GetStoredReleaseProviderNames();
+
+    /// <summary>
     /// Get all <see cref="ReleaseInfo"/> stored in the local database.
     /// </summary>
     /// <param name="pageSize">Limits the number of results per page. Set to 0 to disable the limit.</param>
