@@ -74,11 +74,12 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
     private void DeleteLogs()
     {
         var settings = settingsProvider.GetSettings().LogRotator;
-        if (!settings.Delete || string.IsNullOrEmpty(settings.Delete_Days) || !int.TryParse(settings.Delete_Days, out var days))
+        if (!settings.Delete || string.IsNullOrEmpty(settings.Delete_Days) || !int.TryParse(settings.Delete_Days, out var days) || days < 0)
             return;
 
+        var currentLog = GetCurrentLogFilePath();
         var threshold = DateTime.UtcNow.AddDays(-days);
-        foreach (var file in EnsureLogDirectory().GetFiles().Where(file => DetermineFormat(file) is ({ }, true) && file.LastWriteTimeUtc < threshold))
+        foreach (var file in EnsureLogDirectory().GetFiles().Where(file => DetermineFormat(file) is ({ }, true) && !string.Equals(file.FullName, currentLog, StringComparison.OrdinalIgnoreCase) && file.LastWriteTimeUtc < threshold))
             file.Delete();
     }
 
