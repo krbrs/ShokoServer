@@ -292,7 +292,7 @@ public class ShokoJsonSchemaGenerator(JsonSerializerSettings newtonsoftJsonSeria
 
     private const string CodeBlockAutoFormatOnLoad = "codeAutoFormatOnLoad";
 
-    private const string EnumDefinitions = "enumDefinitions";
+    internal const string EnumDefinitions = "enumDefinitions";
 
     private const string EnumIsFlag = "enumIsFlag";
 
@@ -546,17 +546,36 @@ public class ShokoJsonSchemaGenerator(JsonSerializerSettings newtonsoftJsonSeria
                     var field = contextualType.GetField(enumName)!;
                     var title = TypeReflectionExtensions.GetDisplayName(field);
                     var description = TypeReflectionExtensions.GetDescription(field);
-                    var value = field.GetAttribute<EnumMemberAttribute>(false) is { } enumMemberAttribute && !string.IsNullOrEmpty(enumMemberAttribute.Value)
-                        ? enumMemberAttribute.Value
-                        : enumValueConverter(Enum.Parse(contextualType.Type, enumName))!;
-                    schema.Enumeration.Add(value);
-                    schema.EnumerationNames.Add(enumName);
-                    enumList.Add(new()
+
+                    var value = enumValueConverter(Enum.Parse(contextualType.Type, enumName))!;
+                    var newtonsoftValue = field.GetAttribute<EnumMemberAttribute>(false) is { } enumMemberAttribute && !string.IsNullOrEmpty(enumMemberAttribute.Value)
+                        ? enumMemberAttribute.Value : null;
+                    var systemTextJsonValue = field.GetAttribute<JsonStringEnumMemberNameAttribute>(false) is { } jsonStringEnumMemberNameAttribute && !string.IsNullOrEmpty(jsonStringEnumMemberNameAttribute.Name)
+                        ? jsonStringEnumMemberNameAttribute.Name : null;
+                    var overrideValue = IsNewtonsoftJson() ? newtonsoftValue : systemTextJsonValue;
+                    var aliasValue = overrideValue ?? enumName;
+                    if (aliasValue.Equals(value, StringComparison.Ordinal))
+                        aliasValue = string.Empty;
+
+                    if (schema.Enumeration.Contains(value))
                     {
-                        { "title", title },
-                        { "description", description },
-                        { "value", value },
-                    });
+                        var enumDict = enumList.First(x => x["value"] == value);
+                        enumDict["alias"] = enumDict["alias"].Split(", ").Append(title).Except([string.Empty, enumDict["title"]]).Distinct().Join(", ");
+                        enumDict["aliasValues"] = enumDict["aliasValues"].Split(", ").Append(aliasValue).Except([string.Empty, enumDict["value"]]).Distinct().Join(", ");
+                    }
+                    else
+                    {
+                        schema.Enumeration.Add(value);
+                        schema.EnumerationNames.Add(enumName);
+                        enumList.Add(new()
+                        {
+                            { "title", title },
+                            { "description", description },
+                            { "value", value },
+                            { "alias", string.Empty },
+                            { "aliasValues", aliasValue },
+                        });
+                    }
                 }
                 uiDict[ElementType] = Convert(DisplayElementType.Enum);
                 uiDict.Add(EnumDefinitions, enumList);
