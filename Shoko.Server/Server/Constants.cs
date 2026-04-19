@@ -27,7 +27,9 @@ public static class Constants
     {
         SQLite = 0,
         SQLServer = 1,
+        MSSQL = SQLServer,
         MySQL = 2,
+        MariaDB = MySQL,
     }
 
     // http://wiki.anidb.net/w/WebAOM#Move.2Frename_system
