@@ -60,7 +60,7 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         if (!settings.Zip)
             return;
         var currentLog = GetCurrentLogFilePath();
-        foreach (var file in EnsureLogDirectory().GetFiles("*.jsonl").Where(file => DetermineFormat(file) is ({ }, false) && !string.Equals(file.FullName, currentLog, StringComparison.OrdinalIgnoreCase)))
+        foreach (var file in EnsureLogDirectory().GetFiles("*.jsonl").Where(file => !string.Equals(file.FullName, currentLog, StringComparison.OrdinalIgnoreCase)))
         {
             var destination = file.FullName + ".gz";
             using var source = File.Open(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
