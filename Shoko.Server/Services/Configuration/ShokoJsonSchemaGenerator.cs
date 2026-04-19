@@ -576,6 +576,11 @@ public class ShokoJsonSchemaGenerator(JsonSerializerSettings newtonsoftJsonSeria
                             { "aliasValues", aliasValue },
                         });
                     }
+                    if (!string.IsNullOrEmpty(aliasValue) && !schema.Enumeration.Contains(aliasValue))
+                    {
+                        schema.Enumeration.Add(aliasValue);
+                        schema.EnumerationNames.Add(enumName);
+                    }
                 }
                 uiDict[ElementType] = Convert(DisplayElementType.Enum);
                 uiDict.Add(EnumDefinitions, enumList);
