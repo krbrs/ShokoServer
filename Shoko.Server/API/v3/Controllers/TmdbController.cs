@@ -512,6 +512,7 @@ public partial class TmdbController : BaseController
     /// <param name="include">Include items that are not included by default</param>
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
     /// <returns></returns>
     [HttpGet("Movie/{movieID}/Shoko/File")]
@@ -522,6 +523,7 @@ public partial class TmdbController : BaseController
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[]? include = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[]? exclude = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[]? include_only = null,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? sortOrder = null
     )
     {
@@ -534,7 +536,7 @@ public partial class TmdbController : BaseController
             .WhereNotNull()
             .SelectMany(xref => xref.VideoLocals)
             .DistinctBy(video => video.VideoLocalID);
-        return ModelHelper.FilterFiles(videoLocals, User, pageSize, page, include, exclude, include_only, sortOrder);
+        return ModelHelper.FilterFiles(videoLocals, User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
     }
 
     #endregion
@@ -1645,6 +1647,7 @@ public partial class TmdbController : BaseController
     /// <param name="include">Include items that are not included by default</param>
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
     /// <returns></returns>
     [HttpGet("Show/{showID}/Shoko/File")]
@@ -1655,6 +1658,7 @@ public partial class TmdbController : BaseController
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[]? include = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[]? exclude = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[]? include_only = null,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? sortOrder = null
     )
     {
@@ -1669,7 +1673,7 @@ public partial class TmdbController : BaseController
             .WhereNotNull()
             .SelectMany(xref => xref.VideoLocals)
             .DistinctBy(video => video.VideoLocalID);
-        return ModelHelper.FilterFiles(videoLocals, User, pageSize, page, include, exclude, include_only, sortOrder);
+        return ModelHelper.FilterFiles(videoLocals, User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
     }
 
     #endregion
@@ -2289,6 +2293,7 @@ public partial class TmdbController : BaseController
     /// <param name="include">Include items that are not included by default</param>
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
     /// <returns></returns>
     [HttpGet("Season/{seasonID}/Shoko/File")]
@@ -2299,6 +2304,7 @@ public partial class TmdbController : BaseController
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[]? include = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[]? exclude = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[]? include_only = null,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? sortOrder = null
     )
     {
@@ -2318,7 +2324,7 @@ public partial class TmdbController : BaseController
                 .WhereNotNull()
                 .SelectMany(xref => xref.VideoLocals)
                 .DistinctBy(video => video.VideoLocalID);
-            return ModelHelper.FilterFiles(videoLocals1, User, pageSize, page, include, exclude, include_only, sortOrder);
+            return ModelHelper.FilterFiles(videoLocals1, User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
         }
 
         var seasonId = int.Parse(seasonID);
@@ -2334,7 +2340,7 @@ public partial class TmdbController : BaseController
             .WhereNotNull()
             .SelectMany(xref => xref.VideoLocals)
             .DistinctBy(video => video.VideoLocalID);
-        return ModelHelper.FilterFiles(videoLocals0, User, pageSize, page, include, exclude, include_only, sortOrder);
+        return ModelHelper.FilterFiles(videoLocals0, User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
     }
 
     #endregion
@@ -2780,6 +2786,7 @@ public partial class TmdbController : BaseController
     /// <param name="include">Include items that are not included by default</param>
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
     /// <returns></returns>
     [HttpGet("Episode/{episodeID}/Shoko/File")]
@@ -2790,6 +2797,7 @@ public partial class TmdbController : BaseController
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[]? include = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[]? exclude = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[]? include_only = null,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? sortOrder = null
     )
     {
@@ -2804,7 +2812,7 @@ public partial class TmdbController : BaseController
             .WhereNotNull()
             .SelectMany(xref => xref.VideoLocals)
             .DistinctBy(video => video.VideoLocalID);
-        return ModelHelper.FilterFiles(videoLocals, User, pageSize, page, include, exclude, include_only, sortOrder);
+        return ModelHelper.FilterFiles(videoLocals, User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
     }
 
     #endregion

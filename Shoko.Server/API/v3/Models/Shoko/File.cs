@@ -15,6 +15,7 @@ using Shoko.Server.API.v3.Models.Release;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
 using Shoko.Server.Utilities;
+using Shoko.Server.Models.Release;
 
 #nullable enable
 namespace Shoko.Server.API.v3.Models.Shoko;
@@ -538,9 +539,14 @@ public partial class File
         CRC32 = 14,
         FileName = 15,
         FileID = 16,
+        ReleaseProviderName = 17,
+        ReleaseProviderID = 18,
+        ReleaseGroupName = 19,
+        ReleaseGroupShortName = 20,
+        ReleaseGroupID = 21,
     }
 
-    private static Func<(VideoLocal Video, VideoLocal_Place? Location, IReadOnlyList<VideoLocal_Place>? Locations, VideoLocal_User? UserRecord), object?>? GetOrderFunction(FileSortCriteria criteria, bool isInverted) =>
+    private static Func<(VideoLocal Video, VideoLocal_Place? Location, IReadOnlyList<VideoLocal_Place>? Locations, StoredReleaseInfo? ReleaseInfo, VideoLocal_User? UserRecord), object?>? GetOrderFunction(FileSortCriteria criteria, bool isInverted) =>
         criteria switch
         {
             FileSortCriteria.ManagedFolderName => (tuple) => tuple.Location?.ManagedFolder?.Name ?? string.Empty,
@@ -559,10 +565,15 @@ public partial class File
             FileSortCriteria.MD5 => (tuple) => tuple.Video.MD5,
             FileSortCriteria.SHA1 => (tuple) => tuple.Video.SHA1,
             FileSortCriteria.CRC32 => (tuple) => tuple.Video.CRC32,
+            FileSortCriteria.ReleaseProviderName => (tuple) => tuple.ReleaseInfo?.ProviderName,
+            FileSortCriteria.ReleaseProviderID => (tuple) => tuple.ReleaseInfo?.ID,
+            FileSortCriteria.ReleaseGroupName => (tuple) => tuple.ReleaseInfo?.GroupName,
+            FileSortCriteria.ReleaseGroupShortName => (tuple) => tuple.ReleaseInfo?.GroupShortName,
+            FileSortCriteria.ReleaseGroupID => (tuple) => tuple.ReleaseInfo?.GroupID,
             _ => null,
         };
 
-    public static IEnumerable<(VideoLocal, VideoLocal_Place?, IReadOnlyList<VideoLocal_Place>?, VideoLocal_User?)> OrderBy(IEnumerable<(VideoLocal, VideoLocal_Place?, IReadOnlyList<VideoLocal_Place>?, VideoLocal_User?)> enumerable, List<string> sortCriterias)
+    public static IEnumerable<(VideoLocal, VideoLocal_Place?, IReadOnlyList<VideoLocal_Place>?, StoredReleaseInfo?, VideoLocal_User?)> OrderBy(IEnumerable<(VideoLocal, VideoLocal_Place?, IReadOnlyList<VideoLocal_Place>?, StoredReleaseInfo?, VideoLocal_User?)> enumerable, List<string> sortCriterias)
     {
         var first = true;
         return sortCriterias.Aggregate(enumerable, (current, rawSortCriteria) =>
@@ -581,7 +592,7 @@ public partial class File
             }
 
             // All other criteria in the list.
-            var ordered = (IOrderedEnumerable<(VideoLocal, VideoLocal_Place?, IReadOnlyList<VideoLocal_Place>?, VideoLocal_User?)>)current;
+            var ordered = (IOrderedEnumerable<(VideoLocal, VideoLocal_Place?, IReadOnlyList<VideoLocal_Place>?, StoredReleaseInfo?, VideoLocal_User?)>)current;
             return isInverted ? ordered.ThenByDescending(orderFunc) : ordered.ThenBy(orderFunc);
         });
     }

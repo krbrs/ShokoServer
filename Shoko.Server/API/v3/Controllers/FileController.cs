@@ -83,6 +83,7 @@ public class FileController(
     /// <param name="include">Include items that are not included by default</param>
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
     /// <returns>A sliced part of the results for the current query.</returns>
     [HttpGet]
@@ -92,9 +93,10 @@ public class FileController(
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[]? include = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[]? exclude = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[]? include_only = null,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? sortOrder = null)
     {
-        return ModelHelper.FilterFiles(RepoFactory.VideoLocal.GetAll(), User, pageSize, page, include, exclude, include_only, sortOrder);
+        return ModelHelper.FilterFiles(RepoFactory.VideoLocal.GetAll(), User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
     }
 
     /// <summary>
@@ -106,6 +108,7 @@ public class FileController(
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="query">An optional search query to filter files based on their absolute paths.</param>
     /// <param name="fuzzy">Indicates that fuzzy-matching should be used for the search query.</param>
     /// <returns>A sliced part of the results for the current query.</returns>
@@ -117,6 +120,7 @@ public class FileController(
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[]? include = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[]? exclude = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[]? include_only = null,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? sortOrder = null,
         [FromQuery] bool fuzzy = true)
     {
@@ -125,7 +129,7 @@ public class FileController(
             .Search(query, tuple => tuple.Places.Select(place => place?.RelativePath).WhereNotNull(), fuzzy)
             .Select(result => result.Result)
             .ToList();
-        return ModelHelper.FilterFiles(searched, User, pageSize, page, include, exclude, include_only, sortOrder, skipSort: true);
+        return ModelHelper.FilterFiles(searched, User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder, skipSort: true);
     }
 
     /// <summary>

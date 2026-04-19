@@ -444,13 +444,31 @@ public static class ModelHelper
         return sizes;
     }
 
-    public static ListResult<File> FilterFiles(IEnumerable<VideoLocal> input, JMMUser user, int pageSize, int page, FileNonDefaultIncludeType[]? include,
-        FileExcludeTypes[]? exclude, FileIncludeOnlyType[]? include_only, List<string>? sortOrder, bool skipSort = false)
+    public static ListResult<File> FilterFiles(
+        IEnumerable<VideoLocal> input,
+        JMMUser user,
+        int pageSize,
+        int page,
+        FileNonDefaultIncludeType[]? include,
+        FileExcludeTypes[]? exclude,
+        FileIncludeOnlyType[]? include_only,
+        List<string>? releaseProviders,
+        List<string>? sortOrder,
+        bool skipSort = false
+    )
     {
+        var includeProviders = releaseProviders?
+            .Where(x => x is { Length: > 1 } && x[0] is not '!')
+            .ToList() ?? [];
+        var excludeProviders = releaseProviders?
+            .Where(x => x is { Length: > 1 } && x[0] is '!')
+            .Select(x => x[1..])
+            .ToList() ?? [];
         include ??= [];
         exclude ??= [];
         include_only ??= [];
 
+        var includeReleaseInfo = includeProviders.Count > 0 || excludeProviders.Count > 0;
         var includeLocations = exclude.Contains(FileExcludeTypes.Duplicates) ||
             include_only.Contains(FileIncludeOnlyType.Duplicates) ||
             (sortOrder?.Any(criteria => criteria.Contains(File.FileSortCriteria.DuplicateCount.ToString())) ?? false);
@@ -461,11 +479,12 @@ public static class ModelHelper
                 Video: video,
                 BestLocation: video.FirstValidPlace,
                 Locations: includeLocations ? video.Places : null,
+                ReleaseInfo: includeReleaseInfo ? video.ReleaseInfo : null,
                 UserRecord: includeUserRecord ? RepoFactory.VideoLocalUser.GetByUserAndVideoLocalID(user.JMMUserID, video.VideoLocalID) : null
             ))
             .Where(tuple =>
             {
-                var (video, _, locations, userRecord) = tuple;
+                var (video, _, locations, releaseInfo, userRecord) = tuple;
                 var xrefs = video.EpisodeCrossReferences;
                 var isAnimeAllowed = xrefs
                     .DistinctBy(xref => xref.AnimeID)
@@ -496,6 +515,16 @@ public static class ModelHelper
 
                 if (exclude.Contains(FileExcludeTypes.Watched) && userRecord?.WatchedDate != null) return false;
                 if (include_only.Contains(FileIncludeOnlyType.Watched) && userRecord?.WatchedDate == null) return false;
+
+                // We only filter the ones with a release info to not imply 'exclude unrecognized'.
+                // If you want to exclude unrecognized, also add an 'exclude unrecognized' filter.
+                if (includeReleaseInfo && releaseInfo is not null)
+                {
+                    if (excludeProviders.Count > 0 && excludeProviders.Any(providerName => releaseInfo.HasProviderName(providerName)))
+                        return false;
+                    if (includeProviders.Count > 0 && includeProviders.Any(providerName => !releaseInfo.HasProviderName(providerName)))
+                        return false;
+                }
 
                 return true;
             });

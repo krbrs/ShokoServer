@@ -330,6 +330,28 @@ public class VideoReleaseService(
 
     #region Get Current Data
 
+    public IEnumerable<IReleaseInfo> GetAllReleases(IEnumerable<string>? releaseProviders = null)
+    {
+        var includeProviders = releaseProviders?
+            .Where(x => x is { Length: > 1 } && x[0] is not '!')
+            .ToList() ?? [];
+        var excludeProviders = releaseProviders?
+            .Where(x => x is { Length: > 1 } && x[0] is '!')
+            .Select(x => x[1..])
+            .ToList() ?? [];
+        if (includeProviders.Count is 0 && excludeProviders.Count is 0)
+            return releaseInfoRepository.GetAll();
+        return releaseInfoRepository.GetAll()
+            .Where(releaseInfo =>
+            {
+                if (excludeProviders.Count > 0 && excludeProviders.Any(providerName => releaseInfo.HasProviderName(providerName)))
+                    return false;
+                if (includeProviders.Count > 0 && includeProviders.Any(providerName => !releaseInfo.HasProviderName(providerName)))
+                    return false;
+                return true;
+            });
+    }
+
     public IReleaseInfo? GetCurrentReleaseForVideo(IVideo video)
         => releaseInfoRepository.GetByEd2kAndFileSize(video.ED2K, video.Size);
 

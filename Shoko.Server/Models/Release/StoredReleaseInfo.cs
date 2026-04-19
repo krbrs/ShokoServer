@@ -269,4 +269,24 @@ public class StoredReleaseInfo : IReleaseInfo, IReleaseGroup, IReleaseMediaInfo,
     }
 
     #endregion
+
+    #region Methods
+
+    /// <summary>
+    /// Returns true if the provider name matches the given provider name.
+    /// </summary>
+    /// <param name="providerName">
+    ///   The provider name.
+    /// </param>
+    /// <returns>
+    ///   <c>true</c> if the provider name matches the given provider name;
+    ///   otherwise, <c>false</c>.
+    /// </returns>
+    public bool HasProviderName(string providerName)
+        => ProviderName == providerName ||
+           ProviderName.StartsWith(providerName + "+") ||
+           ProviderName.EndsWith("+" + providerName) ||
+           ProviderName.Contains("+" + providerName + "+");
+
+    #endregion
 }

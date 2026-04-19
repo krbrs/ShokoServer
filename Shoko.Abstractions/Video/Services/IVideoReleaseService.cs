@@ -162,6 +162,18 @@ public interface IVideoReleaseService
     ReleaseProviderInfo GetProviderInfo<TProvider>() where TProvider : class, IReleaseInfoProvider;
 
     /// <summary>
+    ///   Gets all releases in the local database.
+    /// </summary>
+    /// <param name="releaseProviders">
+    ///   The names of the providers to get releases for. Append <c>!</c> to the
+    ///   provider name to exclude the releases instead of including them.
+    /// </param>
+    /// <returns>
+    ///   All releases in the local database.
+    /// </returns>
+    IEnumerable<IReleaseInfo> GetAllReleases(IEnumerable<string>? releaseProviders = null);
+
+    /// <summary>
     ///   Get the current release for the specified video, if one exists.
     /// </summary>
     /// <param name="video">

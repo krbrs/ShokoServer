@@ -8,12 +8,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Shoko.Abstractions.Extensions;
 using Shoko.Abstractions.Plugin;
-using Shoko.Abstractions.Video.Release;
 using Shoko.Abstractions.Video;
+using Shoko.Abstractions.Video.Release;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Abstractions.Web.Attributes;
 using Shoko.Server.API.Annotations;
 using Shoko.Server.API.ModelBinders;
+using Shoko.Server.API.v3.Helpers;
+using Shoko.Server.API.v3.Models.Common;
 using Shoko.Server.API.v3.Models.Release;
 using Shoko.Server.API.v3.Models.Release.Input;
 using Shoko.Server.Repositories.Cached;
@@ -370,5 +372,21 @@ public class ReleaseInfoController(ISettingsProvider settingsProvider, IPluginMa
 
         return Ok(new ReleaseInfo(releaseInfo));
     }
+
+    /// <summary>
+    /// Get all <see cref="ReleaseInfo"/> stored in the local database.
+    /// </summary>
+    /// <param name="pageSize">Limits the number of results per page. Set to 0 to disable the limit.</param>
+    /// <param name="page">Page number.</param>
+    /// <param name="releaseProviders">Filter to only include releases from certain release providers. Append <c>!</c> to the provider name to exclude the releases</param>
+    /// <returns>A sliced part of the results for the current query.</returns>
+    [HttpGet("Release")]
+    public ActionResult<ListResult<ReleaseInfo>> GetAllReleases(
+        [FromQuery, Range(0, 1000)] int pageSize = 100,
+        [FromQuery, Range(1, int.MaxValue)] int page = 1,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string>? releaseProviders = null
+    )
+        => videoReleaseService.GetAllReleases(releaseProviders)
+            .ToListResult(r => new ReleaseInfo(r), page, pageSize);
 }
 

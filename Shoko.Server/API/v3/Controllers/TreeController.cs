@@ -519,6 +519,7 @@ public class TreeController(ISettingsProvider settingsProvider, FilterFactory _f
     /// <param name="include">Include items that are not included by default</param>
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
     /// <returns></returns>
     [HttpGet("Series/{seriesID}/File")]
@@ -529,6 +530,7 @@ public class TreeController(ISettingsProvider settingsProvider, FilterFactory _f
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[] include = default,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[] exclude = default,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[] include_only = default,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string> releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string> sortOrder = null
     )
     {
@@ -540,7 +542,7 @@ public class TreeController(ISettingsProvider settingsProvider, FilterFactory _f
         if (!user.AllowedSeries(series))
             return Forbid(SeriesController.SeriesForbiddenForUser);
 
-        return ModelHelper.FilterFiles(series.VideoLocals, user, pageSize, page, include, exclude, include_only, sortOrder);
+        return ModelHelper.FilterFiles(series.VideoLocals, user, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
     }
 
     #region Episode
@@ -554,6 +556,7 @@ public class TreeController(ISettingsProvider settingsProvider, FilterFactory _f
     /// <param name="include">Include items that are not included by default</param>
     /// <param name="exclude">Exclude items of certain types</param>
     /// <param name="include_only">Filter to only include items of certain types</param>
+    /// <param name="releaseProviders">Filter to only include files from certain release providers. Append <c>!</c> to the provider name to exclude the files</param>
     /// <param name="sortOrder">Sort ordering. Attach '-' at the start to reverse the order of the criteria.</param>
     /// <returns></returns>
     [HttpGet("Episode/{episodeID}/File")]
@@ -563,6 +566,7 @@ public class TreeController(ISettingsProvider settingsProvider, FilterFactory _f
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileNonDefaultIncludeType[] include = default,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileExcludeTypes[] exclude = default,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] FileIncludeOnlyType[] include_only = default,
+        [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string> releaseProviders = null,
         [FromQuery, ModelBinder(typeof(CommaDelimitedModelBinder))] List<string> sortOrder = null
     )
     {
@@ -577,7 +581,7 @@ public class TreeController(ISettingsProvider settingsProvider, FilterFactory _f
         if (!User.AllowedSeries(series))
             return Forbid(EpisodeController.EpisodeForbiddenForUser);
 
-        return ModelHelper.FilterFiles(episode.VideoLocals, User, pageSize, page, include, exclude, include_only, sortOrder);
+        return ModelHelper.FilterFiles(episode.VideoLocals, User, pageSize, page, include, exclude, include_only, releaseProviders, sortOrder);
     }
 
     #endregion

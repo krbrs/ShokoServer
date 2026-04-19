@@ -59,7 +59,7 @@ public class CrossRef_File_Episode : IVideoCrossReference
 
     public StoredReleaseInfo? ReleaseInfo => RepoFactory.StoredReleaseInfo.GetByEd2kAndFileSize(Hash, FileSize);
 
-    public bool IsManuallyLinked => ReleaseInfo is { } releaseInfo && (releaseInfo.ProviderName is "User" || releaseInfo.ProviderName.StartsWith("User+") || releaseInfo.ProviderName.EndsWith("+User") || releaseInfo.ProviderName.Contains("+User+"));
+    public bool IsManuallyLinked => ReleaseInfo is { } releaseInfo && releaseInfo.HasProviderName("User");
 
     private (int? LastKnownPercentage, (int Start, int End) Range) _percentageRangeCalculated = (null, (0, 0));
 
@@ -70,11 +70,12 @@ public class CrossRef_File_Episode : IVideoCrossReference
             if (_percentageRangeCalculated.LastKnownPercentage == Percentage)
                 return _percentageRangeCalculated.Range;
 
-            var releaseInfo = (IReleaseInfo?)ReleaseInfo;
-            if (releaseInfo is not null && !IsAnidbProvider(releaseInfo.ProviderName) && releaseInfo.CrossReferences.FirstOrDefault(xref => xref.AnidbEpisodeID == EpisodeID) is { } xref)
+            var storedReleaseInfo = ReleaseInfo;
+            var releaseInfo = (IReleaseInfo?)storedReleaseInfo;
+            if (releaseInfo is not null && !storedReleaseInfo!.HasProviderName("AniDB") && releaseInfo.CrossReferences.FirstOrDefault(xref => xref.AnidbEpisodeID == EpisodeID) is { } xref)
             {
                 _percentageRangeCalculated = (Percentage, (xref.PercentageStart, xref.PercentageEnd));
-                return (xref.PercentageStart, xref.PercentageEnd);
+                return _percentageRangeCalculated.Range;
             }
 
             var percentage = (0, 100);
@@ -123,12 +124,6 @@ public class CrossRef_File_Episode : IVideoCrossReference
             return percentage;
         }
     }
-
-    private static bool IsAnidbProvider(string providerName) =>
-        providerName is "AniDB" ||
-        providerName.StartsWith("AniDB+") ||
-        providerName.EndsWith("+AniDB") ||
-        providerName.Contains("+AniDB+");
 
     internal static int PercentageToFileCount(int percentage)
         => percentage switch
