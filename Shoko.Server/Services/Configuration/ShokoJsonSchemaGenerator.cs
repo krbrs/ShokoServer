@@ -560,8 +560,8 @@ public class ShokoJsonSchemaGenerator(JsonSerializerSettings newtonsoftJsonSeria
                     if (schema.Enumeration.Contains(value))
                     {
                         var enumDict = enumList.First(x => x["value"] == value);
-                        enumDict["alias"] = enumDict["alias"].Split(", ").Append(title).Except([string.Empty, enumDict["title"]]).Distinct().Join(", ");
-                        enumDict["aliasValues"] = enumDict["aliasValues"].Split(", ").Append(aliasValue).Except([string.Empty, enumDict["value"]]).Distinct().Join(", ");
+                        enumDict["alias"] = enumDict["alias"].Split(", ", StringSplitOptions.None | StringSplitOptions.RemoveEmptyEntries).Append(title).Except([enumDict["title"]]).Distinct().Join(", ");
+                        enumDict["aliasValues"] = enumDict["aliasValues"].Split(", ", StringSplitOptions.None | StringSplitOptions.RemoveEmptyEntries).Append(aliasValue).Except([enumDict["value"]]).Distinct().Join(", ");
                     }
                     else
                     {
