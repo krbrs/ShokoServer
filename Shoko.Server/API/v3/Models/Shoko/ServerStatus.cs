@@ -8,35 +8,51 @@ namespace Shoko.Server.API.v3.Models.Shoko;
 public class ServerStatus
 {
     /// <summary>
-    /// The progress message for starting up
-    /// </summary>
-    public string? StartupMessage { get; set; }
-
-    /// <summary>
     /// The state of startup.
     /// </summary>
     public StartupState State { get; set; }
 
     /// <summary>
+    /// The progress message for starting up
+    /// </summary>
+    public string? StartupMessage { get; set; }
+
+    /// <summary>
     /// Indicates that we can perform a controlled shutdown.
     /// </summary>
-    public bool CanShutdown { get; set; }
+    /// <remarks>
+    /// Only set for authenticated requests.
+    /// </remarks>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public bool? CanShutdown { get; set; }
 
     /// <summary>
     /// Indicates that we can perform a controlled restart.
     /// </summary>
-    public bool CanRestart { get; set; }
+    /// <remarks>
+    /// Only set for authenticated requests.
+    /// </remarks>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public bool? CanRestart { get; set; }
 
     /// <summary>
-    /// Uptime in hh:mm:ss or null if not started. Uses hours may be greater than a day.
+    /// Uptime since bootstrapping took place. Uses hours may be greater than a day.
     /// </summary>
+    /// <remarks>
+    /// Only set for authenticated requests.
+    /// </remarks>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public TimeSpan? Uptime { get; set; }
 
     /// <summary>
     /// This is true in situations where there can be absolutely no write operations.
     /// This is for polling. Ideally, a client will use the Events SignalR Hub.
     /// </summary>
-    public required DatabaseBlockedInfo DatabaseBlocked { get; set; }
+    /// <remarks>
+    /// Only set for authenticated requests.
+    /// </remarks>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public DatabaseBlockedInfo? DatabaseBlocked { get; set; }
 
     [JsonConverter(typeof(StringEnumConverter))]
     public enum StartupState

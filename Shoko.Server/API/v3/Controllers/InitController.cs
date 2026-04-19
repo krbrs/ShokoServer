@@ -103,10 +103,15 @@ public class InitController : BaseController
     /// Gets various information about the startup status of the server
     /// This will work after init
     /// </summary>
+    /// <remarks>
+    /// To get the uptime, database blocked, etc. you need to authenticate when
+    /// not in setup mode or a failed startup.
+    /// </remarks>
     /// <returns></returns>
     [HttpGet("Status")]
     public ServerStatus GetServerStatus()
     {
+        var isLoggedIn = User is not null;
         var message = (string)null;
         var state = ServerStatus.StartupState.Waiting;
         if (_systemService.IsStarted)
@@ -124,6 +129,12 @@ public class InitController : BaseController
             if (message.Equals("Complete!")) message = null;
             state = ServerStatus.StartupState.Starting;
         }
+        if (!isLoggedIn)
+            return new()
+            {
+                State = state,
+                StartupMessage = message,
+            };
         return new()
         {
             State = state,
