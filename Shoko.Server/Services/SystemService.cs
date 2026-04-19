@@ -504,7 +504,6 @@ public class SystemService : ISystemService
             if (cancellationToken.IsCancellationRequested)
                 return;
 
-            StartupMessage = "Setting up database...";
             if (!InitializeDatabase(databaseFactory, repoFactory, cancellationToken) && !cancellationToken.IsCancellationRequested)
                 return;
 
@@ -605,6 +604,7 @@ public class SystemService : ISystemService
                 return false;
             }
 
+            StartupMessage = $"Setting up database connection to {instance.GetType().Name}...";
             for (var attempt = 1; attempt <= 60; attempt++)
             {
                 if (instance.TestConnection())
