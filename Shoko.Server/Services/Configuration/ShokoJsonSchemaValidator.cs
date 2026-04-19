@@ -74,8 +74,22 @@ public partial class ShokoJsonSchemaValidator<TConfig>(ILogger logger, Configura
                     }
                     else if (base.Validate(parentToken, token, schema, schemaType, propertyName, propertyPath).Count == 0)
                     {
-                        if (
-                            (schema.Type.HasFlag(JsonObjectType.String) || uiDefinition[ShokoJsonSchemaGenerator.ElementType] is "enum") &&
+                        if (uiDefinition[ShokoJsonSchemaGenerator.ElementType] is "enum" && uiDefinition[ShokoJsonSchemaGenerator.EnumDefinitions] as List<Dictionary<string, string>> is { } enumDefinitions)
+                        {
+                            if (envVar.Length > 2 && ((envVar[0] == '"' && envVar[^1] == '"') || (envVar[0] == '\'' && envVar[^1] == '\'')))
+                                envVar = envVar[1..^1];
+                            foreach (var enumDefinition in enumDefinitions)
+                            {
+                                if (enumDefinition["aliasValues"].Split(",").Except([string.Empty]).Any(aliasValue => string.Equals(envVar, aliasValue, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    envVar = enumDefinition["value"];
+                                    break;
+                                }
+                            }
+                            envVar = $"\"{envVar}\"";
+                        }
+                        else if (
+                            schema.Type.HasFlag(JsonObjectType.String) &&
                             (envVar.Length < 2 || envVar[0] != '"' || envVar[^1] != '"') && (!schema.Type.HasFlag(JsonObjectType.Null) || envVar != "null")
                         )
                             envVar = '"' + envVar.Replace(InvalidQuoteRegex(), "\\\"") + '"';
