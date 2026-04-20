@@ -175,6 +175,16 @@ public class WebSettings
     public bool EnableLegacyPlexAPI { get; set; } = true;
 
     /// <summary>
+    /// Allow anonymous file streaming in API v3.
+    /// </summary>
+    [Visibility(Advanced = true)]
+    [Display(Name = "Allow Anonymous File Streaming in API v3")]
+    [RequiresRestart]
+    [EnvironmentVariable("SHOKO_API_V3_ALLOW_ANONYMOUS_FILE_STREAMING")]
+    [DefaultValue(false)]
+    public bool AllowAnonymousFileStreamingInAPIv3 { get; set; } = false;
+
+    /// <summary>
     /// Always use the developer exceptions page, even in production.
     /// </summary>
     [Badge("Debug", Theme = DisplayColorTheme.Warning)]

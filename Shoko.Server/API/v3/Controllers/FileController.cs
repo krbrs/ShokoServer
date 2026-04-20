@@ -611,6 +611,9 @@ public class FileController(
     [NonAction]
     public ActionResult GetFileStreamInternal(int fileID, string? filename = null, bool streamPositionScrobbling = false)
     {
+        if (!SettingsProvider.GetSettings().Web.AllowAnonymousFileStreamingInAPIv3 && User is null)
+            return Unauthorized();
+
         var file = RepoFactory.VideoLocal.GetByID(fileID);
         if (file == null)
             return NotFound(FileNotFoundWithFileID);
@@ -649,6 +652,9 @@ public class FileController(
     [HttpGet("{fileID}/StreamDirectory/")]
     public ActionResult GetFileStreamDirectory([FromRoute, Range(1, int.MaxValue)] int fileID)
     {
+        if (!SettingsProvider.GetSettings().Web.AllowAnonymousFileStreamingInAPIv3 && User is null)
+            return Unauthorized();
+
         var file = RepoFactory.VideoLocal.GetByID(fileID);
         if (file == null)
             return NotFound(FileNotFoundWithFileID);
@@ -668,6 +674,9 @@ public class FileController(
     [HttpGet("{fileID}/StreamDirectory/ExternalSub/{filename}")]
     public ActionResult GetExternalSubtitle([FromRoute, Range(1, int.MaxValue)] int fileID, [FromRoute] string filename)
     {
+        if (!SettingsProvider.GetSettings().Web.AllowAnonymousFileStreamingInAPIv3 && User is null)
+            return Unauthorized();
+
         var file = RepoFactory.VideoLocal.GetByID(fileID);
         if (file == null)
             return NotFound(FileNotFoundWithFileID);
