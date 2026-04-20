@@ -59,25 +59,25 @@ public class LogEntry
 
     /// <inheritdoc/>
     public override string ToString()
-        => ToString("simple");
+        => ToString(LogSerializeFormat.Simple);
 
     /// <summary>
     ///   Returns a string representation of the log entry.
     /// </summary>
-    /// <param name="format">
-    ///   The format to use. Can be <c>"simple"</c>, <c>"full"</c>,
-    ///   <c>"json"</c>, or <c>"legacy"</c>.
-    /// </param>
+    /// <param name="format">Serialization layout to use.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///   Thrown when <paramref name="format"/> is invalid.
+    /// </exception>
     /// <returns>
     ///   A string representation of the log entry.
     /// </returns>
-    public string ToString(string? format)
+    public string ToString(LogSerializeFormat format)
         => format switch
         {
-            "simple" => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{Level.ToShortString()}] {Logger.Split('.').Last()}: {Message}{(Exception is { Length: > 0 } ? $": {Exception}" : string.Empty)}",
-            "full" => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz}] [{Level.ToShortString()}] [{ThreadId:000}] {Logger}: {Message}{(Exception is { Length: > 0 } ? Environment.NewLine + Exception : string.Empty)}",
-            "json" => System.Text.Json.JsonSerializer.Serialize(this),
-            "legacy" => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] {Level.ToNLogString()}|{Logger} > {Message}{(Exception is { Length: > 0 } ? $": {Exception}" : string.Empty)}",
-            _ => throw new ArgumentException($"Invalid format: {format}"),
+            LogSerializeFormat.Simple => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{Level.ToShortString()}] {Logger.Split('.').Last()}: {Message}{(Exception is { Length: > 0 } ? $": {Exception}" : string.Empty)}",
+            LogSerializeFormat.Full => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz}] [{Level.ToShortString()}] [{ThreadId:000}] {Logger}: {Message}{(Exception is { Length: > 0 } ? Environment.NewLine + Exception : string.Empty)}",
+            LogSerializeFormat.Json => System.Text.Json.JsonSerializer.Serialize(this),
+            LogSerializeFormat.Legacy => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] {Level.ToNLogString()}|{Logger} > {Message}{(Exception is { Length: > 0 } ? $": {Exception}" : string.Empty)}",
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null),
         };
 }

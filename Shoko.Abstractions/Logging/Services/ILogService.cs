@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
+using Shoko.Abstractions.Exceptions;
 using Shoko.Abstractions.Logging.Models;
 
 namespace Shoko.Abstractions.Logging.Services;
@@ -59,47 +59,38 @@ public interface ILogService
     ///   Reads entries from the specified log file using line-based paging in
     ///   ascending or descending order.
     /// </summary>
-    /// <param name="fileInfo">
-    ///   The log file to read.
+    /// <param name="fileInfo">The log file to read.</param>
+    /// <param name="options">
+    ///   Optional. Paging, sort, date bounds, and <see cref="LogBaseOptions"/> filters.
+    ///   When <c>null</c>, uses default offset/limit and ascending order.
     /// </param>
-    /// <param name="offset">
-    ///   Optional. The line offset to start from.
-    /// </param>
-    /// <param name="limit">
-    ///   Optional. The maximum number of entries to return. Set to <c>0</c> to
-    ///   disable limit.
-    /// </param>
-    /// <param name="descending">
-    ///   Optional. If set to <c>true</c>, then the entries are returned in
-    ///   descending order.
-    /// </param>
+    /// <exception cref="GenericValidationException">
+    ///   Thrown when the options are invalid.
+    /// </exception>
     /// <returns>
     ///   The paged read result, with the first entry being the least recent in
     ///   ascending order, or the most recent in descending order.
     /// </returns>
-    LogReadResult ReadLogFile(
-        LogFileInfo fileInfo,
-        [Range(0, uint.MaxValue)] uint offset = 0,
-        [Range(0, 1000)] uint limit = 100,
-        bool descending = false
-    );
+    LogReadResult ReadLogFile(LogFileInfo fileInfo, LogReadOptions? options = null);
 
     /// <summary>
     ///   Opens a stream for downloading a specific log file.
     /// </summary>
-    /// <param name="fileInfo">
-    ///   The log file to download.
+    /// <param name="fileInfo">The log file to download.</param>
+    /// <param name="options">
+    ///   Optional. Format, date bounds, and <see cref="LogBaseOptions"/> filters.
+    ///   When <c>null</c>, uses <see cref="LogSerializeFormat.Simple"/> without extra constraints.
     /// </param>
-    /// <param name="format">
-    ///   Format to return the log entries as. Only applies to
-    ///   <seealso cref="LogFileFormat.JsonL">JSONL-formatted</seealso> files.
-    ///   Can be <c>"simple"</c>, <c>"full"</c>, <c>"json"</c>, or
-    ///   <c>"legacy"</c>.
-    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///   Thrown when <see cref="LogDownloadOptions.Format"/> is invalid.
+    /// </exception>
+    /// <exception cref="GenericValidationException">
+    ///   Thrown when the options are invalid.
+    /// </exception>
     /// <returns>
     ///   The download metadata and stream.
     /// </returns>
-    LogDownloadResult DownloadLogFile(LogFileInfo fileInfo, string format = "simple");
+    LogDownloadResult DownloadLogFile(LogFileInfo fileInfo, LogDownloadOptions? options = null);
 
     /// <summary>
     ///   Deletes the specified log file.
@@ -123,57 +114,33 @@ public interface ILogService
     ///   Reads entries across all readable log files in descending order.
     ///   With optional date-range filtering and line-based paging.
     /// </summary>
-    /// <param name="from">
-    ///   Optional. Earliest timestamp (inclusive). Defaults to
-    ///   <seealso cref="DateTime.MinValue"/> if not set.
+    /// <param name="options">
+    ///   Optional. When <c>null</c>, uses descending order, default limit, and no date or DSL filters.
     /// </param>
-    /// <param name="to">
-    ///   Optional. Latest timestamp (inclusive). Defaults to
-    ///   <seealso cref="DateTime.UtcNow"/> if not set.
-    /// </param>
-    /// <param name="offset">
-    ///   Optional. The line offset to start from.
-    /// </param>
-    /// <param name="limit">
-    ///   Optional. The maximum number of entries to return. Set to <c>0</c> to
-    ///   disable limit.
-    /// </param>
-    /// <param name="descending">
-    ///   Optional. If set to <c>true</c>, then the entries are returned in
-    ///   descending order. Defaults to <c>true</c>.
-    /// </param>
+    /// <exception cref="GenericValidationException">
+    ///   Thrown when the options are invalid.
+    /// </exception>
     /// <returns>
     ///   The paged read result, with the first entry being the most recent.
     /// </returns>
-    LogReadResult ReadRange(
-        DateTime? from = null,
-        DateTime? to = null,
-        [Range(0, uint.MaxValue)] uint offset = 0,
-        [Range(0, 1000)] uint limit = 100,
-        bool descending = true
-    );
+    LogReadResult ReadRange(LogReadOptions? options = null);
 
     /// <summary>
-    ///   Opens a stream for downloading a specific log file.
+    ///   Opens a stream for downloading log entries across files in a date range.
     /// </summary>
-    /// <param name="from">
-    ///   Optional. Earliest timestamp (inclusive). Defaults to
-    ///   <seealso cref="DateTime.MinValue"/> if not set.
+    /// <param name="options">
+    ///   Optional. When <c>null</c>, uses <see cref="LogSerializeFormat.Simple"/> and default range behavior.
     /// </param>
-    /// <param name="to">
-    ///   Optional. The latest timestamp (inclusive). Defaults to
-    ///   <seealso cref="DateTime.UtcNow"/> if not set.
-    /// </param>
-    /// <param name="format">
-    ///   Format to return the log entries as. Only applies to
-    ///   <seealso cref="LogFileFormat.JsonL">JSONL-formatted</seealso> files.
-    ///   Can be <c>"simple"</c>, <c>"full"</c>, <c>"json"</c>, or
-    ///   <c>"legacy"</c>.
-    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///   Thrown when <see cref="LogDownloadOptions.Format"/> is invalid.
+    /// </exception>
+    /// <exception cref="GenericValidationException">
+    ///   Thrown when the options are invalid.
+    /// </exception>
     /// <returns>
     ///   The download metadata and stream.
     /// </returns>
-    LogDownloadResult DownloadRange(DateTime? from = null, DateTime? to = null, string format = "simple");
+    LogDownloadResult DownloadRange(LogDownloadOptions? options = null);
 
     #endregion
 }

@@ -13,6 +13,7 @@ using Newtonsoft.Json.Linq;
 using NLog;
 using Quartz;
 using Shoko.Abstractions.Extensions;
+using Shoko.Abstractions.Logging.Models;
 using Shoko.Abstractions.Logging.Services;
 using Shoko.Abstractions.Metadata.Anidb;
 using Shoko.Abstractions.Metadata.Anidb.Services;
@@ -674,12 +675,12 @@ public class Core : BaseController
     {
         var logService = HttpContext.RequestServices.GetRequiredService<ILogService>();
         var currentLog = logService.GetCurrentLogFile();
-        var readResult = logService.ReadLogFile(currentLog, position, lines);
+        var readResult = logService.ReadLogFile(currentLog, new() { Offset = position, Limit = lines });
         return new Dictionary<string, object>
         {
             ["position"] = readResult.NextOffset ?? (position + readResult.Entries.Count),
             ["lines"] = readResult.Entries
-                .Select(entry => entry.ToString("simple"))
+                .Select(entry => entry.ToString(LogSerializeFormat.Simple))
                 .ToArray()
         };
     }

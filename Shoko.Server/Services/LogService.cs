@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Timers;
 using Microsoft.Extensions.Logging;
 using NLog;
@@ -13,12 +15,14 @@ using NLog.Filters;
 using NLog.Targets;
 using NLog.Targets.Wrappers;
 using Quartz.Logging;
+using Shoko.Abstractions.Exceptions;
 using Shoko.Abstractions.Extensions;
 using Shoko.Abstractions.Logging.Models;
 using Shoko.Abstractions.Logging.Services;
 using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Utilities;
 using Shoko.Server.API.SignalR.NLog;
+using Shoko.Server.Extensions;
 using Shoko.Server.Settings;
 
 using ELogLevel = Microsoft.Extensions.Logging.LogLevel;
@@ -103,25 +107,25 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
     public LogFileInfo? GetLogFileByID(Guid fileID)
         => GetAllLogFiles().FirstOrDefault(file => file.ID == fileID);
 
-    public LogReadResult ReadLogFile(LogFileInfo fileInfo, uint offset = 0, uint limit = 100, bool descending = false)
-        => ReadLogFileInternal(fileInfo, offset, limit, null, null, descending);
-
-    private LogReadResult ReadLogFileInternal(LogFileInfo file, uint offset, uint limit, DateTime? from, DateTime? to, bool descending)
+    public LogReadResult ReadLogFile(LogFileInfo fileInfo, LogReadOptions? options = null)
     {
-        if (file.Format is not LogFileFormat.JsonL)
+        if (fileInfo.Format is not LogFileFormat.JsonL)
             throw new InvalidOperationException("Only JSONL logs support reading.");
+
+        options ??= new();
         uint skipped = 0;
-        var nextOffset = offset;
+        var nextOffset = options.Offset;
         var entries = new List<LogEntry>();
-        foreach (var entry in ReadEntries(file, from, to, descending))
+        var compiled = CompileOptionsOrThrow(options);
+        foreach (var entry in ReadEntries(fileInfo, compiled, options.Descending))
         {
-            if (skipped < offset)
+            if (skipped < options.Offset)
             {
                 skipped++;
                 nextOffset++;
                 continue;
             }
-            if (limit > 0 && entries.Count >= limit)
+            if (options.Limit > 0 && entries.Count >= options.Limit)
                 break;
             entries.Add(entry);
             nextOffset++;
@@ -129,50 +133,59 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         return new() { NextOffset = nextOffset, Entries = entries };
     }
 
-    public LogDownloadResult DownloadLogFile(LogFileInfo fileInfo, string format = "simple")
+    public LogDownloadResult DownloadLogFile(LogFileInfo fileInfo, LogDownloadOptions? options = null)
     {
-        if (fileInfo.Format is LogFileFormat.JsonL)
+        if (fileInfo.Format is not LogFileFormat.JsonL)
         {
-            var normalizedFormat = NormalizeDownloadFormat(format);
-            if (normalizedFormat is "json")
+            if (fileInfo.IsCompressed)
             {
-                var stream = fileInfo.IsCompressed
-                    ? OpenGZipStream(fileInfo.FullPath)
-                    : File.Open(fileInfo.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var stream = OpenZipEntryStream(fileInfo.FullPath, out var entryName);
                 return new()
                 {
-                    ContentType = "application/x-ndjson",
-                    FileName = fileInfo.FileName,
+                    ContentType = "text/plain",
+                    FileName = entryName,
                     Stream = stream,
                 };
             }
 
-            var entries = ReadEntries(fileInfo);
-            var formattedStream = CreateFormattedStream(entries, normalizedFormat);
             return new()
             {
                 ContentType = "text/plain",
-                FileName = Path.ChangeExtension(fileInfo.FileName, ".log"),
-                Stream = formattedStream,
+                FileName = fileInfo.FileName,
+                Stream = File.Open(fileInfo.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
             };
         }
 
-        if (fileInfo.IsCompressed)
+        options ??= new();
+        var compiledOptions = CompileOptionsOrThrow(options);
+        if (options.Format is LogSerializeFormat.Json)
         {
-            var stream = OpenZipEntryStream(fileInfo.FullPath, out var entryName);
+            if (options.HasFilters)
+                return new()
+                {
+                    ContentType = "application/x-ndjson",
+                    FileName = fileInfo.FileName,
+                    Stream = CreateFilteredJsonStream(fileInfo, compiledOptions),
+                };
+
+            var stream = fileInfo.IsCompressed
+                ? OpenGZipStream(fileInfo.FullPath)
+                : File.Open(fileInfo.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             return new()
             {
-                ContentType = "text/plain",
-                FileName = entryName,
+                ContentType = "application/x-ndjson",
+                FileName = fileInfo.FileName,
                 Stream = stream,
             };
         }
 
+        var entries = ReadEntries(fileInfo, compiledOptions);
+        var formattedStream = CreateFormattedStream(entries, options.Format);
         return new()
         {
             ContentType = "text/plain",
-            FileName = fileInfo.FileName,
-            Stream = File.Open(fileInfo.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
+            FileName = Path.ChangeExtension(fileInfo.FileName, ".log"),
+            Stream = formattedStream,
         };
     }
 
@@ -249,6 +262,19 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         return new WrappedZipStream(archive, entry.Open(), zipStream);
     }
 
+    private MemoryStream CreateFilteredJsonStream(LogFileInfo fileInfo, CompiledLogBaseOptions options)
+    {
+        var ms = new MemoryStream();
+        using (var writer = new StreamWriter(ms, Encoding.UTF8, leaveOpen: true))
+        {
+            foreach (var entry in ReadEntries(fileInfo, options))
+                writer.WriteLine(JsonSerializer.Serialize(entry));
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
     private sealed class WrappedZipStream(ZipArchive archive, Stream inner, Stream fileStream) : Stream
     {
         public override bool CanRead => inner.CanRead;
@@ -280,28 +306,30 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 
     #region Range Operations
 
-    public LogReadResult ReadRange(DateTime? from = null, DateTime? to = null, uint offset = 0, uint limit = 100, bool descending = true)
+    public LogReadResult ReadRange(LogReadOptions? options = null)
     {
+        options ??= new() { Descending = true };
         var files = GetAllLogFiles()
             .Where(file => file.Format is LogFileFormat.JsonL)
-            .OrderBy(file => file.LastModifiedAt, descending ? Comparer<DateTime>.Create((x, y) => y.CompareTo(x)) : Comparer<DateTime>.Default)
+            .OrderBy(file => file.LastModifiedAt, options.Descending ? Comparer<DateTime>.Create((x, y) => y.CompareTo(x)) : Comparer<DateTime>.Default)
             .ToList();
 
         uint skipped = 0;
-        var nextOffset = offset;
+        var nextOffset = options.Offset;
         var entries = new List<LogEntry>();
+        var compiledOptions = CompileOptionsOrThrow(options);
         foreach (var file in files)
         {
-            foreach (var entry in ReadEntries(file, from, to, descending))
+            foreach (var entry in ReadEntries(file, compiledOptions, options.Descending))
             {
-                if (skipped < offset)
+                if (skipped < options.Offset)
                 {
                     skipped++;
                     nextOffset++;
                     continue;
                 }
 
-                if (limit > 0 && entries.Count >= limit)
+                if (options.Limit > 0 && entries.Count >= options.Limit)
                     return new() { NextOffset = nextOffset, Entries = entries };
 
                 entries.Add(entry);
@@ -311,22 +339,37 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         return new() { NextOffset = nextOffset, Entries = entries };
     }
 
-    public LogDownloadResult DownloadRange(DateTime? from = null, DateTime? to = null, string format = "simple")
+    public LogDownloadResult DownloadRange(LogDownloadOptions? options = null)
     {
-        var normalizedFormat = NormalizeDownloadFormat(format);
-        var entries = ReadRange(from, to, 0, 0).Entries;
-        var stream = CreateFormattedStream(entries, normalizedFormat);
+        options ??= new();
+        var readOpts = new LogReadOptions
+        {
+            From = options.From,
+            To = options.To,
+            Offset = 0,
+            Limit = 0,
+            Descending = false,
+            Levels = options.Levels,
+            Logger = options.Logger,
+            Caller = options.Caller,
+            Message = options.Message,
+            Exception = options.Exception,
+            ProcessId = options.ProcessId,
+            ThreadId = options.ThreadId,
+        };
+        var entries = ReadRange(readOpts).Entries;
+        var stream = CreateFormattedStream(entries, options.Format);
         return new()
         {
-            ContentType = normalizedFormat is "json" ? "application/x-ndjson" : "text/plain",
-            FileName = BuildRangeDownloadFileName(from, to, normalizedFormat),
+            ContentType = options.Format is LogSerializeFormat.Json ? "application/x-ndjson" : "text/plain",
+            FileName = BuildRangeDownloadFileName(options.From, options.To, options.Format),
             Stream = stream,
         };
     }
 
     #region Range Operations | Internals
 
-    private static MemoryStream CreateFormattedStream(IEnumerable<LogEntry> entries, string format)
+    private static MemoryStream CreateFormattedStream(IEnumerable<LogEntry> entries, LogSerializeFormat format)
     {
         var content = entries
             .Select(entry => entry.ToString(format))
@@ -334,9 +377,9 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         return new MemoryStream(Encoding.UTF8.GetBytes(content));
     }
 
-    private static string BuildRangeDownloadFileName(DateTime? from, DateTime? to, string format)
+    private static string BuildRangeDownloadFileName(DateTime? from, DateTime? to, LogSerializeFormat format)
     {
-        var suffix = format is "json" ? "jsonl" : "log";
+        var suffix = format is LogSerializeFormat.Json ? "jsonl" : "log";
         var fromPart = from?.ToUniversalTime().ToString("yyyyMMddTHHmmssZ") ?? "min";
         var toPart = to?.ToUniversalTime().ToString("yyyyMMddTHHmmssZ") ?? "now";
         return $"range-{fromPart}-{toPart}.{suffix}";
@@ -347,6 +390,8 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
     #endregion
 
     #region Shared Internals
+
+    private static readonly TimeSpan _logFilterRegexMatchTimeout = TimeSpan.FromMilliseconds(250);
 
     private DirectoryInfo EnsureLogDirectory()
     {
@@ -416,39 +461,35 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         }
     }
 
-    private static string NormalizeDownloadFormat(string? format)
-    {
-        var normalized = format?.Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "json" or "simple" or "full" or "legacy" => normalized,
-            _ => throw new InvalidOperationException("Invalid format. Supported formats are \"simple\", \"full\", and \"json\"."),
-        };
-    }
-
-    private IEnumerable<LogEntry> ReadEntries(LogFileInfo file, DateTime? from = null, DateTime? to = null, bool descending = false)
+    private IEnumerable<LogEntry> ReadEntries(LogFileInfo file, CompiledLogBaseOptions? options, bool descending = false)
     {
         if (file.IsCompressed)
         {
             using var stream = OpenGZipStream(file.FullPath);
             using var reader = new StreamReader(stream);
-            foreach (var entry in ParseLogEntries(ReadLinesForward(reader), from, to, descending))
+            foreach (var entry in ParseLogEntries(ReadLinesForward(reader), options, descending))
                 yield return entry;
             yield break;
         }
 
         if (descending)
         {
-            foreach (var entry in ParseLogEntries(ReadLinesReverse(file.FullPath), from, to))
+            foreach (var entry in ParseLogEntries(ReadLinesReverse(file.FullPath), options))
                 yield return entry;
             yield break;
         }
 
         using var fileStream = File.Open(file.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         using var fileReader = new StreamReader(fileStream);
-        foreach (var entry in ParseLogEntries(ReadLinesForward(fileReader), from, to))
+        foreach (var entry in ParseLogEntries(ReadLinesForward(fileReader), options))
             yield return entry;
     }
+
+    private static Stream OpenGZipStream(string fullPath)
+        => new GZipStream(
+            File.Open(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
+            CompressionMode.Decompress
+        );
 
     private static IEnumerable<string> ReadLinesForward(StreamReader reader)
     {
@@ -510,14 +551,14 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
         return Encoding.UTF8.GetString(reversedLineBytes.ToArray());
     }
 
-    private IEnumerable<LogEntry> ParseLogEntries(IEnumerable<string> lines, DateTime? from, DateTime? to, bool descending = false)
+    private IEnumerable<LogEntry> ParseLogEntries(IEnumerable<string> lines, CompiledLogBaseOptions? options = null, bool descending = false)
     {
         if (descending)
         {
             var entries = new List<LogEntry>();
             foreach (var line in lines)
             {
-                if (TryParseFilteredLine(line, from, to, out var entry))
+                if (TryParseFilteredLine(line, options, out var entry))
                     entries.Add(entry);
             }
 
@@ -528,31 +569,305 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 
         foreach (var line in lines)
         {
-            if (TryParseFilteredLine(line, from, to, out var entry))
+            if (TryParseFilteredLine(line, options, out var entry))
                 yield return entry;
         }
     }
 
-    private bool TryParseFilteredLine(string line, DateTime? from, DateTime? to, out LogEntry entry)
+    private bool TryParseFilteredLine(string line, CompiledLogBaseOptions? options, [NotNullWhen(true)] out LogEntry entry)
     {
         entry = null!;
         if (string.IsNullOrWhiteSpace(line))
             return false;
         if (!TryParseLogEntry(line, out var parsedEntry))
             return false;
-        if (from.HasValue && parsedEntry.Timestamp < from.Value)
-            return false;
-        if (to.HasValue && parsedEntry.Timestamp > to.Value)
-            return false;
+        if (options is not null)
+        {
+            if (options.From.HasValue && parsedEntry.Timestamp < options.From.Value)
+                return false;
+            if (options.To.HasValue && parsedEntry.Timestamp > options.To.Value)
+                return false;
+            if (options.Levels is { Count: > 0 } && !options.Levels.Contains(parsedEntry.Level))
+                return false;
+            if (options.ProcessId.HasValue && parsedEntry.ProcessId != options.ProcessId.Value)
+                return false;
+            if (options.ThreadId.HasValue && parsedEntry.ThreadId != options.ThreadId.Value)
+                return false;
+            if (options.Logger is { } lc && !LogFilterMatchField(parsedEntry.Logger, lc))
+                return false;
+            if (options.Caller is { } cc && !LogFilterMatchField(parsedEntry.Caller, cc))
+                return false;
+            if (options.Message is { } mc && !LogFilterMatchField(parsedEntry.Message, mc))
+                return false;
+            if (options.Exception is { } ec && !LogFilterMatchField(parsedEntry.Exception ?? string.Empty, ec))
+                return false;
+        }
         entry = parsedEntry;
         return true;
     }
 
-    private static Stream OpenGZipStream(string fullPath)
-        => new GZipStream(
-            File.Open(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
-            CompressionMode.Decompress
-        );
+    private static bool LogFilterMatchField(string haystack, CompiledTextCriterion c)
+    {
+        var comparison = c.IgnoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var matches = c.Mode switch
+        {
+            LogTextMatchMode.Contains => haystack.IndexOf(c.Payload, comparison) >= 0,
+            LogTextMatchMode.Equals => string.Equals(haystack, c.Payload, comparison),
+            LogTextMatchMode.StartsWith => haystack.StartsWith(c.Payload, comparison),
+            LogTextMatchMode.EndsWith => haystack.EndsWith(c.Payload, comparison),
+            LogTextMatchMode.Fuzzy => haystack.FuzzyMatches(c.Payload),
+            LogTextMatchMode.Regex => c.CompiledRegex!.IsMatch(haystack),
+            _ => false,
+        };
+        return c.Inverse ? !matches : matches;
+    }
+
+    private static CompiledLogBaseOptions CompileOptionsOrThrow(LogBaseOptions baseOptions)
+    {
+        if (!TryCompileLogEntryFilter(baseOptions, out var compiled, out var err))
+            throw new GenericValidationException("Unable to parse log options before use.", err);
+        return compiled;
+    }
+
+    /// <summary>
+    ///   Builds a compiled options object or returns per-field validation errors for invalid DSL.
+    /// </summary>
+    internal static bool TryCompileLogEntryFilter(LogBaseOptions baseOptions, [NotNullWhen(true)] out CompiledLogBaseOptions? compiledOptions, out Dictionary<string, IReadOnlyList<string>> errors)
+    {
+        errors = [];
+        if (!baseOptions.HasFilters)
+        {
+            compiledOptions = new();
+            return true;
+        }
+
+        CompiledTextCriterion? logger = null, caller = null, message = null, exception = null;
+        if (baseOptions.Logger is not null && !TryCompileLogFilterField(baseOptions.Logger, nameof(baseOptions.Logger), out logger, out var error))
+            errors.Add(nameof(baseOptions.Logger), [error]);
+        if (baseOptions.Caller is not null && !TryCompileLogFilterField(baseOptions.Caller, nameof(baseOptions.Caller), out caller, out error))
+            errors.Add(nameof(baseOptions.Caller), [error]);
+        if (baseOptions.Message is not null && !TryCompileLogFilterField(baseOptions.Message, nameof(baseOptions.Message), out message, out error))
+            errors.Add(nameof(baseOptions.Message), [error]);
+        if (baseOptions.Exception is not null && !TryCompileLogFilterField(baseOptions.Exception, nameof(baseOptions.Exception), out exception, out error))
+            errors.Add(nameof(baseOptions.Exception), [error]);
+        if (errors.Count > 0)
+        {
+            compiledOptions = null;
+            return false;
+        }
+
+        compiledOptions = new CompiledLogBaseOptions
+        {
+            From = baseOptions.From?.ToUniversalTime(),
+            To = baseOptions.To?.ToUniversalTime(),
+            Levels = baseOptions.Levels,
+            ProcessId = baseOptions.ProcessId,
+            ThreadId = baseOptions.ThreadId,
+            Logger = logger,
+            Caller = caller,
+            Message = message,
+            Exception = exception,
+        };
+        return true;
+    }
+
+    private static bool TryCompileLogFilterField(string dsl, string fieldName, out CompiledTextCriterion? criterion, [NotNullWhen(false)] out string? error)
+    {
+        criterion = null;
+        if (!TryParseLogFilterDsl(dsl, fieldName, out var mode, out var inverse, out var ignoreCase, out var payload, out error))
+            return false;
+
+        Regex? rx = null;
+        if (mode is LogTextMatchMode.Regex && !TryCompileLogFilterRegexPayload(payload, fieldName, out rx, out error))
+            return false;
+
+        criterion = new CompiledTextCriterion
+        {
+            Mode = mode,
+            Inverse = inverse,
+            IgnoreCase = ignoreCase,
+            Payload = payload,
+            CompiledRegex = rx,
+        };
+        return true;
+    }
+
+    private static bool TryParseLogFilterDsl(
+        string dsl,
+        string fieldName,
+        out LogTextMatchMode mode,
+        out bool inverse,
+        out bool ignoreCase,
+        out string payload,
+        [NotNullWhen(false)] out string? error)
+    {
+        mode = LogTextMatchMode.Contains;
+        inverse = false;
+        ignoreCase = false;
+        payload = dsl;
+        error = null;
+
+        var colon = dsl.IndexOf(':');
+        if (colon < 0)
+        {
+            mode = LogTextMatchMode.Contains;
+            payload = dsl;
+            return true;
+        }
+
+        if (colon == 0)
+        {
+            error = $"{fieldName}: DSL cannot start with ':'.";
+            return false;
+        }
+
+        var head = dsl.AsSpan(0, colon);
+        var modeChar = head[0];
+        mode = modeChar switch
+        {
+            'c' => LogTextMatchMode.Contains,
+            '=' => LogTextMatchMode.Equals,
+            '^' => LogTextMatchMode.StartsWith,
+            '$' => LogTextMatchMode.EndsWith,
+            '~' => LogTextMatchMode.Fuzzy,
+            '*' => LogTextMatchMode.Regex,
+            _ => (LogTextMatchMode)255,
+        };
+        if ((int)mode == 255)
+        {
+            error = $"{fieldName}: Unknown mode character '{modeChar}'.";
+            return false;
+        }
+
+        inverse = false;
+        ignoreCase = false;
+        for (var i = 1; i < head.Length; i++)
+        {
+            var c = head[i];
+            if (c is '!')
+            {
+                if (inverse)
+                {
+                    error = $"{fieldName}: Duplicate '!' in modifiers.";
+                    return false;
+                }
+
+                inverse = true;
+            }
+            else if (c is '#')
+            {
+                if (ignoreCase)
+                {
+                    error = $"{fieldName}: Duplicate '#' in modifiers.";
+                    return false;
+                }
+
+                ignoreCase = true;
+            }
+            else
+            {
+                error = $"{fieldName}: Invalid character '{c}' in modifiers (only ! and # allowed).";
+                return false;
+            }
+        }
+
+        if (ignoreCase && mode is LogTextMatchMode.Fuzzy or LogTextMatchMode.Regex)
+            ignoreCase = false;
+
+        payload = dsl[(colon + 1)..];
+        return true;
+    }
+
+    private static bool TryCompileLogFilterRegexPayload(
+        string payload,
+        string fieldName,
+        [NotNullWhen(true)] out Regex? regex,
+        [NotNullWhen(false)] out string? error)
+    {
+        regex = null;
+        error = null;
+
+        string pattern;
+        var options = RegexOptions.CultureInvariant;
+
+        if (payload.Length >= 2 && payload[0] == '/')
+        {
+            var lastSlash = payload.LastIndexOf('/');
+            if (lastSlash <= 0)
+            {
+                error = $"{fieldName}: Regex payload has leading '/' but no closing '/'.";
+                return false;
+            }
+
+            pattern = payload[1..lastSlash];
+            var flags = payload.AsSpan(lastSlash + 1);
+            foreach (var f in flags)
+            {
+                switch (f)
+                {
+                    case 'i':
+                        options |= RegexOptions.IgnoreCase;
+                        break;
+                    default:
+                        error = $"{fieldName}: Unsupported regex flag '{f}'.";
+                        return false;
+                }
+            }
+        }
+        else
+            pattern = payload;
+
+        try
+        {
+            regex = new Regex(pattern, options, _logFilterRegexMatchTimeout);
+        }
+        catch (ArgumentException ex)
+        {
+            error = $"{fieldName}: Invalid regex: {ex.Message}";
+            return false;
+        }
+
+        return true;
+    }
+
+    internal enum LogTextMatchMode
+    {
+        Contains,
+        Equals,
+        StartsWith,
+        EndsWith,
+        Fuzzy,
+        Regex,
+    }
+
+    /// <summary>
+    ///   One compiled text-field criterion (logger, caller, message, or exception).
+    /// </summary>
+    internal sealed class CompiledTextCriterion
+    {
+        public required LogTextMatchMode Mode { get; init; }
+        public required bool Inverse { get; init; }
+        public required bool IgnoreCase { get; init; }
+        /// <summary>For non-regex modes: pattern / substring.</summary>
+        public required string Payload { get; init; }
+        public Regex? CompiledRegex { get; init; }
+    }
+
+    /// <summary>
+    ///   Parsed and compiled <see cref="LogBaseOptions"/> for efficient matching.
+    /// </summary>
+    internal sealed class CompiledLogBaseOptions
+    {
+        public DateTime? From { get; init; }
+        public DateTime? To { get; init; }
+        public IReadOnlyList<ELogLevel>? Levels { get; init; }
+        public int? ProcessId { get; init; }
+        public int? ThreadId { get; init; }
+        public CompiledTextCriterion? Logger { get; init; }
+        public CompiledTextCriterion? Caller { get; init; }
+        public CompiledTextCriterion? Message { get; init; }
+        public CompiledTextCriterion? Exception { get; init; }
+    }
 
     #endregion
 
