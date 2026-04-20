@@ -707,6 +707,8 @@ public class AniDB_Anime : IAnidbAnime
         .Select(tuple => new AniDB_Anime_Tag_Abstract(tuple.tag, tuple.xref))
         .ToList();
 
+    IReadOnlyList<IAnidbSimilarAnime> IAnidbAnime.Similar => SimilarAnime;
+
     IReadOnlyList<IAnidbSeason> IAnidbAnime.Seasons => AniDBSeasons;
 
     IReadOnlyList<IAnidbEpisode> IAnidbAnime.Episodes => AniDBEpisodes
