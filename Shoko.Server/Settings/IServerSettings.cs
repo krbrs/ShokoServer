@@ -109,9 +109,9 @@ public interface IServerSettings
     FileQualityPreferences FileQualityPreferences { get; set; }
 
     /// <summary>
-    /// The log rotator settings.
+    /// The logging settings.
     /// </summary>
-    LogRotatorSettings LogRotator { get; set; }
+    LoggingSettings Logging { get; set; }
 
     /// <summary>
     /// Linux runtime settings. Windows users can ignore this.
@@ -127,11 +127,6 @@ public interface IServerSettings
     /// The web UI settings, as a stringified JSON object.
     /// </summary>
     string WebUI_Settings { get; set; }
-
-    /// <summary>
-    /// Indicates if trace logging enabled.
-    /// </summary>
-    bool TraceLog { get; set; }
 
     /// <summary>
     /// Dump the settings to the log file on startup.

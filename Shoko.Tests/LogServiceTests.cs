@@ -488,9 +488,9 @@ public class LogServiceTests : IDisposable
     private LogService CreateService()
     {
         var settings = new ServerSettings();
-        settings.LogRotator.Enabled = false;
-        settings.LogRotator.Zip = false;
-        settings.LogRotator.Delete = false;
+        settings.Logging.RotationEnabled = false;
+        settings.Logging.RotationCompress = false;
+        settings.Logging.RotationDeleteEnabled = false;
 
         var settingsProvider = new Mock<ISettingsProvider>();
         settingsProvider.Setup(provider => provider.GetSettings(It.IsAny<bool>())).Returns(settings);

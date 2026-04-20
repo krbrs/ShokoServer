@@ -96,11 +96,13 @@ public static class ModelClients
             Trakt_UpdateFrequency = 0,
             Trakt_SyncFrequency = (int)settings.TraktTv.SyncFrequency,
 
-            // LogRotator
-            RotateLogs = settings.LogRotator.Enabled,
-            RotateLogs_Delete = settings.LogRotator.Delete,
-            RotateLogs_Delete_Days = settings.LogRotator.Delete_Days,
-            RotateLogs_Zip = settings.LogRotator.Zip,
+            // Logging
+            RotateLogs = settings.Logging.RotationEnabled,
+            RotateLogs_Delete = settings.Logging.RotationDeleteEnabled,
+            RotateLogs_Delete_Days = settings.Logging.RotationDeleteDays.HasValue
+                ? settings.Logging.RotationDeleteDays.ToString()
+                : string.Empty,
+            RotateLogs_Zip = settings.Logging.RotationCompress,
 
             //WebUI
             WebUI_Settings = settings.WebUI_Settings,

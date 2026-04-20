@@ -208,6 +208,8 @@ public class SystemService : ISystemService
 
             var settings = _settingsProvider.GetSettings();
 
+            LogService.ApplyLoggingSettings(settings.Logging);
+
             // Set the setup mode flag before proceeding.
             InSetupMode = settings.FirstRun;
 

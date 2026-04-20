@@ -34,7 +34,6 @@
     <Compile Include="..\SharedAssemblyInfo.cs" Link="Properties\SharedAssemblyInfo.cs" />
     <Resource Include="db.ico" />
     <Resource Include="**\*.txt" />
-    <Content Include="nlog.config" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="plugins\*.md" CopyToOutputDirectory="Always" />
     <Content Include="webui\**\*" CopyToOutputDirectory="PreserveNewest" />
     <Resource Remove="bin\**\*" />

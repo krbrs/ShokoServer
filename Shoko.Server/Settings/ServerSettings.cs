@@ -158,7 +158,7 @@ public class ServerSettings : IServerSettings, INewtonsoftJsonConfiguration, IHi
 
     /// <inheritdoc />
     [Display(Name = "Log Rotation")]
-    public LogRotatorSettings LogRotator { get; set; } = new();
+    public LoggingSettings Logging { get; set; } = new();
 
     /// <inheritdoc />
     [Badge("Advanced", Theme = DisplayColorTheme.Primary)]
@@ -174,13 +174,6 @@ public class ServerSettings : IServerSettings, INewtonsoftJsonConfiguration, IHi
     [EnvironmentVariable("SHOKO_WEBUI_SETTINGS", AllowOverride = true)]
     [CodeEditor(CodeEditorLanguage.Json, AutoFormatOnLoad = true)]
     public string WebUI_Settings { get; set; } = "";
-
-    /// <summary>
-    /// Enable trace logging in the log file and web UI live console.
-    /// </summary>
-    [Display(Name = "Enable Trace Logging")]
-    [EnvironmentVariable("SHOKO_TRACE_LOG")]
-    public bool TraceLog { get; set; }
 
     /// <summary>
     /// Dump the settings to the log file on startup.

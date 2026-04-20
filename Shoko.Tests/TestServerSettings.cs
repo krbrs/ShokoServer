@@ -13,7 +13,7 @@ public class TestServerSettings
     public string WebUI_Settings { get; set; } = "";
     public bool FirstRun { get; set; } = true;
     public int LegacyRenamerMaxEpisodeLength { get; set; } = 33;
-    public LogRotatorSettings LogRotator { get; set; } = new();
+    public LoggingSettings Logging { get; set; } = new();
     public DatabaseSettings Database { get; set; } = new();
     public AniDbSettings AniDb { get; set; } = new();
     public TMDBSettings TMDB { get; set; } = new();
@@ -36,5 +36,4 @@ public class TestServerSettings
     public TraktSettings TraktTv { get; set; } = new();
     public string UpdateChannel { get; set; } = "Stable";
     public LinuxSettings Linux { get; set; } = new();
-    public bool TraceLog { get; set; }
 }

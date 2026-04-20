@@ -74,6 +74,8 @@ public static partial class SettingsMigrations
         // settings file gets backed up in case the user wants to downgrade their
         // install.
         { 12, null },
+        { 13, MigrateLogRotatorToLogging },
+        { 14, MigrateTraceLogToLogging },
     };
 
     private static string MigrateTvDBLanguageEnum(string settings)
@@ -236,6 +238,51 @@ public static partial class SettingsMigrations
         webSettings["Port"] = serverPort;
         currentSettings.Remove("ServerPort");
 
+        return currentSettings.ToString();
+    }
+
+    private static string MigrateLogRotatorToLogging(string settings)
+    {
+        var currentSettings = JObject.Parse(settings);
+        if (currentSettings["LogRotator"] is not JObject oldLogging)
+            return settings;
+
+        var loggingSettings = currentSettings["Logging"] as JObject ?? new JObject();
+        currentSettings["Logging"] = loggingSettings;
+
+        if (loggingSettings["RotationEnabled"] is null && oldLogging["Enabled"] is not null)
+            loggingSettings["RotationEnabled"] = oldLogging["Enabled"];
+        if (loggingSettings["RotationCompress"] is null && oldLogging["Zip"] is not null)
+            loggingSettings["RotationCompress"] = oldLogging["Zip"];
+        if (loggingSettings["RotationDeleteEnabled"] is null && oldLogging["Delete"] is not null)
+            loggingSettings["RotationDeleteEnabled"] = oldLogging["Delete"];
+        if (loggingSettings["RotationDeleteDays"] is null && oldLogging["Delete_Days"] is not null)
+        {
+            var rawValue = oldLogging["Delete_Days"]?.Value<string>();
+            if (int.TryParse(rawValue, out var parsedDays))
+                loggingSettings["RotationDeleteDays"] = parsedDays;
+            else
+                loggingSettings["RotationDeleteDays"] = null;
+        }
+
+        currentSettings.Remove("LogRotator");
+        return currentSettings.ToString();
+    }
+
+    private static string MigrateTraceLogToLogging(string settings)
+    {
+        var currentSettings = JObject.Parse(settings);
+        var rootTrace = currentSettings["TraceLog"];
+        if (rootTrace is null || rootTrace.Type == JTokenType.Null)
+            return settings;
+
+        var loggingSettings = currentSettings["Logging"] as JObject ?? new JObject();
+        currentSettings["Logging"] = loggingSettings;
+
+        if (loggingSettings["TraceLog"] is null)
+            loggingSettings["TraceLog"] = rootTrace.DeepClone();
+
+        currentSettings.Remove("TraceLog");
         return currentSettings.ToString();
     }
 }

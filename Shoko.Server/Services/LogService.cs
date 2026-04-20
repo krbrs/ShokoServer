@@ -12,8 +12,8 @@ using Microsoft.Extensions.Logging;
 using NLog;
 using NLog.Config;
 using NLog.Filters;
+using NLog.Layouts;
 using NLog.Targets;
-using NLog.Targets.Wrappers;
 using Quartz.Logging;
 using Shoko.Abstractions.Exceptions;
 using Shoko.Abstractions.Extensions;
@@ -23,6 +23,7 @@ using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Utilities;
 using Shoko.Server.API.SignalR.NLog;
 using Shoko.Server.Extensions;
+using Shoko.Server.Logging;
 using Shoko.Server.Settings;
 
 using ELogLevel = Microsoft.Extensions.Logging.LogLevel;
@@ -33,6 +34,10 @@ namespace Shoko.Server.Services;
 
 public class LogService(ILogger<LogService> logger, IApplicationPaths applicationPaths, ISettingsProvider settingsProvider) : ILogService
 {
+    private static readonly System.Threading.Lock _loggerConfigLock = new();
+
+    public static bool IsLoggingInitialized { get; private set; }
+
     #region Maintenance
 
     private readonly Timer _timer = new(86400000) { AutoReset = true };
@@ -60,8 +65,8 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 
     private void CompressLogs()
     {
-        var settings = settingsProvider.GetSettings().LogRotator;
-        if (!settings.Zip)
+        var settings = settingsProvider.GetSettings().Logging;
+        if (!settings.RotationCompress)
             return;
         var currentLog = GetCurrentLogFilePath();
         foreach (var file in EnsureLogDirectory().GetFiles("*.jsonl").Where(file => !string.Equals(file.FullName, currentLog, StringComparison.OrdinalIgnoreCase)))
@@ -77,12 +82,12 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 
     private void DeleteLogs()
     {
-        var settings = settingsProvider.GetSettings().LogRotator;
-        if (!settings.Delete || string.IsNullOrEmpty(settings.Delete_Days) || !int.TryParse(settings.Delete_Days, out var days) || days < 0)
+        var settings = settingsProvider.GetSettings().Logging;
+        if (!settings.RotationDeleteEnabled || !settings.RotationDeleteDays.HasValue || settings.RotationDeleteDays.Value < 0)
             return;
 
         var currentLog = GetCurrentLogFilePath();
-        var threshold = DateTime.UtcNow.AddDays(-days);
+        var threshold = DateTime.UtcNow.AddDays(-settings.RotationDeleteDays.Value);
         foreach (var file in EnsureLogDirectory().GetFiles().Where(file => DetermineFormat(file) is ({ }, true) && !string.Equals(file.FullName, currentLog, StringComparison.OrdinalIgnoreCase) && file.LastWriteTimeUtc < threshold))
             file.Delete();
     }
@@ -873,65 +878,108 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 
     #region Static Methods
 
-    public static void InitLogger(IApplicationPaths applicationPaths)
+    private static bool _traceLogging = false;
+
+    private static List<LogLevelRuleConfiguration> _logLevelRules = [];
+
+    private static LogSerializeFormat _consoleFormat = LogSerializeFormat.Console;
+
+    static LogService()
     {
-        var config = LogManager.Configuration;
-        if (config is null)
-            return;
-
-        var target = config.FindTargetByName<FileTarget>("file");
-        if (target != null)
-        {
-            target.FileName = Path.Join(applicationPaths.LogsPath, "${shortdate}.jsonl")!;
-        }
-
-#if LOGWEB
-            // Disable blackhole http info logs
-            config.LoggingRules.FirstOrDefault(r => r.LoggerNamePattern.StartsWith("Microsoft.AspNetCore"))?.DisableLoggingForLevel(LogLevel.Info);
-            config.LoggingRules.FirstOrDefault(r => r.LoggerNamePattern.StartsWith("Shoko.Server.API.Authentication"))?.DisableLoggingForLevel(LogLevel.Info);
-#endif
-#if DEBUG
-        // Enable debug logging
-        config.LoggingRules.FirstOrDefault(a => target != null && a.Targets.Contains(target))
-            ?.EnableLoggingForLevel(NLogLevel.Debug);
-#endif
-
-        var signalrTarget =
-            new AsyncTargetWrapper(
-                new SignalRTarget { Name = "signalr", MaxLogsCount = 5000, Layout = "${message}${onexception:\\: ${exception:format=tostring}}" }, 50,
-                AsyncTargetWrapperOverflowAction.Discard);
-        config.AddTarget("signalr", signalrTarget);
-        config.LoggingRules.Add(new LoggingRule("*", NLogLevel.Trace, signalrTarget));
-        var consoleTarget = config.FindTargetByName<ColoredConsoleTarget>("console");
-        consoleTarget?.Layout = "${date:format=HH\\:mm\\:ss}| ${logger:shortname=true} --- ${message}${onexception:\\: ${exception:format=tostring}}";
-
-        foreach (var loggingRule in config.LoggingRules)
-        {
-            var hasFileTarget = target != null && loggingRule.Targets.Contains(target);
-            var hasConsoleTarget = consoleTarget != null && loggingRule.Targets.Contains(consoleTarget);
-            if (hasFileTarget || hasConsoleTarget || loggingRule.Targets.Contains(signalrTarget))
-            {
-                loggingRule.FilterDefaultAction = FilterResult.Log;
-                loggingRule.Filters.Add(new ConditionBasedFilter()
-                {
-                    Action = FilterResult.Ignore,
-                    Condition = "(contains(message, 'password') or contains(message, 'token') or contains(message, 'key')) and starts-with(message, 'Settings.')"
-                });
-            }
-        }
-
-        LogProvider.SetLogProvider(new NLog.Extensions.Logging.NLogLoggerFactory());
-
-        LogManager.ReconfigExistingLoggers();
+        LogManager.Setup().SetupExtensions(b => b.RegisterLayoutRenderer<ShortLevelLayoutRenderer>());
     }
 
-    public static void SetTraceLogging(bool enabled)
+    public static void InitLogger(IApplicationPaths applicationPaths)
+    {
+        lock (_loggerConfigLock)
+        {
+            var config = new LoggingConfiguration();
+
+            var fileTarget = BuildFileTarget(applicationPaths);
+            var consoleTarget = BuildConsoleTarget(LogSerializeFormat.Console);
+            var signalrTarget = BuildSignalRTarget();
+            var voidTarget = new NullTarget("void");
+            config.AddTarget(fileTarget);
+            config.AddTarget(consoleTarget);
+            config.AddTarget(signalrTarget);
+            config.AddTarget(voidTarget);
+
+            RebuildLoggingRules(config, GetDefaultLogLevelRules(), voidTarget, fileTarget, consoleTarget, signalrTarget);
+            ApplyMessageRedactionFilter(config, fileTarget, consoleTarget, signalrTarget);
+#if DEBUG
+            // Enable debug logging
+            config.LoggingRules.FirstOrDefault(a => a.Targets.Contains(fileTarget))
+                ?.EnableLoggingForLevel(NLogLevel.Debug);
+#endif
+            LogManager.Configuration = config;
+            LogProvider.SetLogProvider(new NLog.Extensions.Logging.NLogLoggerFactory());
+            LogManager.ReconfigExistingLoggers();
+            IsLoggingInitialized = true;
+        }
+    }
+
+    public static void ApplyLoggingSettings(LoggingSettings logging)
+    {
+        lock (_loggerConfigLock)
+        {
+            var config = LogManager.Configuration;
+            if (config is null)
+                return;
+
+            var updated = false;
+            if (ApplyLoggingLevelRules(logging, config))
+                updated = true;
+            if (ApplyConsoleFormat(logging, config))
+                updated = true;
+            if (SetTraceLogging(logging.TraceLog))
+                updated = true;
+            if (updated)
+                LogManager.ReconfigExistingLoggers();
+        }
+    }
+
+    private static bool ApplyLoggingLevelRules(LoggingSettings logging, LoggingConfiguration config)
+    {
+        if (_logLevelRules.SequenceEqual(logging.LogLevelRules))
+            return false;
+        if (config.FindTargetByName<FileTarget>("file") is not { } fileTarget)
+            return false;
+        if (config.FindTargetByName<ColoredConsoleTarget>("console") is not { } consoleTarget)
+            return false;
+        if (config.FindTargetByName<Target>("signalr") is not { } signalrTarget)
+            return false;
+        if (config.FindTargetByName<Target>("void") is not { } voidTarget)
+            return false;
+
+        _logLevelRules = logging.LogLevelRules
+            .Select(a => new LogLevelRuleConfiguration() { LoggerNamePattern = a.LoggerNamePattern, MaxLevel = a.MaxLevel, Final = a.Final })
+            .ToList();
+        var mergedRules = MergeLogLevelRules(logging.LogLevelRules);
+        RebuildLoggingRules(config, mergedRules, voidTarget, fileTarget, consoleTarget, signalrTarget);
+        ApplyMessageRedactionFilter(config, fileTarget, consoleTarget, signalrTarget);
+        return true;
+    }
+
+    private static bool ApplyConsoleFormat(LoggingSettings logging, LoggingConfiguration config)
+    {
+        var consoleTarget = config.FindTargetByName<ColoredConsoleTarget>("console");
+        if (consoleTarget is null || _consoleFormat == logging.ConsoleFormat)
+            return false;
+
+        _consoleFormat = logging.ConsoleFormat;
+        consoleTarget.Layout = GetConsoleLayout(logging.ConsoleFormat);
+        return true;
+    }
+
+    private static bool SetTraceLogging(bool enabled)
     {
         var config = LogManager.Configuration;
-        if (config == null)
-            return;
-        var fileRule = config.LoggingRules.FirstOrDefault(a => a.Targets.Any(b => b is FileTarget));
-        var signalrRule = config.LoggingRules.FirstOrDefault(a => a.Targets.Any(b => b is SignalRTarget));
+        if (config == null || _traceLogging == enabled)
+            return false;
+
+        _traceLogging = enabled;
+        var fileRule = config.LoggingRules.FirstOrDefault(a => a.Targets.Any(b => b.Name == "file"));
+        var signalrRule = config.LoggingRules.FirstOrDefault(a => a.Targets.Any(b => b.Name == "signalr"));
         if (enabled)
         {
             fileRule?.EnableLoggingForLevels(NLogLevel.Trace, NLogLevel.Debug);
@@ -942,8 +990,125 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
             fileRule?.DisableLoggingForLevels(NLogLevel.Trace, NLogLevel.Debug);
             signalrRule?.DisableLoggingForLevels(NLogLevel.Trace, NLogLevel.Debug);
         }
+        return true;
+    }
 
-        LogManager.ReconfigExistingLoggers();
+    private static FileTarget BuildFileTarget(IApplicationPaths applicationPaths)
+        => new("file")
+        {
+            FileName = Path.Join(applicationPaths.LogsPath, "${shortdate}.jsonl"),
+            ArchiveAboveSize = 52428800,
+            ArchiveFileName = Path.Join(applicationPaths.LogsPath, "${shortdate}.{#####}.jsonl"),
+            KeepFileOpen = false,
+            Layout = GetJsonLayout(),
+        };
+
+    private static ColoredConsoleTarget BuildConsoleTarget(LogSerializeFormat format)
+        => new("console")
+        {
+            Layout = GetConsoleLayout(format),
+        };
+
+    private static SignalRTarget BuildSignalRTarget()
+        => new()
+        {
+            Name = "signalr",
+            MaxLogsCount = 5000,
+            Layout = "${message}${onexception:\\: ${exception:format=tostring}}",
+        };
+
+    private static IReadOnlyList<LogLevelRuleConfiguration> GetDefaultLogLevelRules()
+        => [
+            new() { LoggerNamePattern = "Microsoft.AspNetCore.*", MaxLevel = ELogLevel.Information, Final = true },
+            new() { LoggerNamePattern = "Quartz*", MaxLevel = ELogLevel.Information, Final = true },
+            new() { LoggerNamePattern = "Shoko.Server.Scheduling.ThreadPooledJobStore", MaxLevel = ELogLevel.Information, Final = true },
+            new() { LoggerNamePattern = "Shoko.Server.Scheduling.Delegates.*", MaxLevel = ELogLevel.Information, Final = true },
+            new() { LoggerNamePattern = "Shoko.Server.API.Authentication.CustomAuthHandler", MaxLevel = ELogLevel.Information, Final = true },
+        ];
+
+    private static IReadOnlyList<LogLevelRuleConfiguration> MergeLogLevelRules(IEnumerable<LogLevelRuleConfiguration>? userRules)
+    {
+        var merged = GetDefaultLogLevelRules().ToDictionary(rule => rule.LoggerNamePattern, StringComparer.OrdinalIgnoreCase);
+        if (userRules is null)
+            return merged.Values.ToList();
+        foreach (var rule in userRules.Where(r => !string.IsNullOrWhiteSpace(r.LoggerNamePattern)))
+            merged[rule.LoggerNamePattern] = rule;
+        return merged.Values.ToList();
+    }
+
+    private static void RebuildLoggingRules(
+        LoggingConfiguration config,
+        IReadOnlyList<LogLevelRuleConfiguration> levelRules,
+        Target voidTarget,
+        FileTarget fileTarget,
+        ColoredConsoleTarget consoleTarget,
+        Target signalrTarget)
+    {
+        config.LoggingRules.Clear();
+        foreach (var overrideRule in levelRules)
+        {
+            if (overrideRule.MaxLevel is not { } maxLevel)
+                continue;
+            var nlogMaxLevel = NLogLevel.FromString(maxLevel.ToNLogString());
+            var rule = new LoggingRule(overrideRule.LoggerNamePattern, NLogLevel.Trace, nlogMaxLevel, voidTarget)
+            {
+                Final = overrideRule.Final
+            };
+            config.LoggingRules.Add(rule);
+        }
+
+        config.LoggingRules.Add(new LoggingRule("*", NLogLevel.Info, fileTarget));
+        config.LoggingRules.Add(new LoggingRule("*", NLogLevel.Trace, consoleTarget));
+        config.LoggingRules.Add(new LoggingRule("*", NLogLevel.Trace, signalrTarget));
+    }
+
+    private static void ApplyMessageRedactionFilter(
+        LoggingConfiguration config,
+        FileTarget fileTarget,
+        ColoredConsoleTarget consoleTarget,
+        Target signalrTarget)
+    {
+        foreach (var loggingRule in config.LoggingRules)
+        {
+            var hasFileTarget = loggingRule.Targets.Contains(fileTarget);
+            var hasConsoleTarget = loggingRule.Targets.Contains(consoleTarget);
+            var hasSignalRTarget = loggingRule.Targets.Contains(signalrTarget);
+            if (!hasFileTarget && !hasConsoleTarget && !hasSignalRTarget)
+                continue;
+
+            loggingRule.FilterDefaultAction = FilterResult.Log;
+            loggingRule.Filters.Clear();
+            loggingRule.Filters.Add(new ConditionBasedFilter
+            {
+                Action = FilterResult.Ignore,
+                Condition = "(contains(message, 'password') or contains(message, 'token') or contains(message, 'key')) and starts-with(message, 'Settings.')",
+            });
+        }
+    }
+
+    private static Layout GetConsoleLayout(LogSerializeFormat format)
+        => format switch
+        {
+            LogSerializeFormat.Simple => "[${date:format=yyyy-MM-dd HH\\:mm\\:ss.fff}] [${shortlevel}] ${logger:shortname=true}: ${message}${onexception:: ${exception:format=tostring}}",
+            LogSerializeFormat.Full => "[${date:format=yyyy-MM-dd HH\\:mm\\:ss.fff zzz}] [${shortlevel}] [${threadid:padding=3}] ${logger}: ${message}${onexception:${newline}${exception:format=tostring}}",
+            LogSerializeFormat.Legacy => "[${date:format=yyyy-MM-dd HH\\:mm\\:ss.fff}] ${level}|${logger} > ${message}${onexception:: ${exception:format=tostring}}",
+            LogSerializeFormat.Json => GetJsonLayout(),
+            LogSerializeFormat.Console => "${date:format=HH\\:mm\\:ss}| ${logger:shortname=true} --- ${message}${onexception:\\: ${exception:format=tostring}}",
+            _ => "${date:format=HH\\:mm\\:ss}| ${logger:shortname=true} --- ${message}${onexception:\\: ${exception:format=tostring}}",
+        };
+
+    private static JsonLayout GetJsonLayout()
+    {
+        var layout = new JsonLayout();
+        layout.Attributes.Add(new JsonAttribute("timestamp", "${date:format=o}"));
+        layout.Attributes.Add(new JsonAttribute("level", "${level}"));
+        layout.Attributes.Add(new JsonAttribute("logger", "${logger}"));
+        layout.Attributes.Add(new JsonAttribute("caller", "${callsite:className=true:methodName=true}"));
+        layout.Attributes.Add(new JsonAttribute("threadId", "${threadid}"));
+        layout.Attributes.Add(new JsonAttribute("processId", "${processid}"));
+        layout.Attributes.Add(new JsonAttribute("message", "${message}"));
+        layout.Attributes.Add(new JsonAttribute("exception", "${exception:format=tostring}"));
+        return layout;
     }
 
     #endregion

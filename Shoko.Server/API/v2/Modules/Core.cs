@@ -613,7 +613,7 @@ public class Core : BaseController
     #region 10. Logs
 
     /// <summary>
-    /// Run LogRotator with current settings
+    /// Run log rotation with current settings
     /// </summary>
     /// <returns></returns>
     [HttpGet("log/get")]
@@ -625,22 +625,22 @@ public class Core : BaseController
     }
 
     /// <summary>
-    /// Set settings for LogRotator
+    /// Set settings for log rotation
     /// </summary>
     /// <returns></returns>
     [HttpPost("log/rotate")]
     public ActionResult SetRotateLogs(Logs rotator)
     {
-        _settings.LogRotator.Enabled = rotator.rotate;
-        _settings.LogRotator.Zip = rotator.zip;
-        _settings.LogRotator.Delete = rotator.delete;
-        _settings.LogRotator.Delete_Days = rotator.days.ToString();
+        _settings.Logging.RotationEnabled = rotator.rotate;
+        _settings.Logging.RotationCompress = rotator.zip;
+        _settings.Logging.RotationDeleteEnabled = rotator.delete;
+        _settings.Logging.RotationDeleteDays = rotator.days;
 
         return APIStatus.OK();
     }
 
     /// <summary>
-    /// Get settings for LogRotator
+    /// Get settings for log rotation
     /// </summary>
     /// <returns></returns>
     [HttpGet("log/rotate")]
@@ -648,17 +648,11 @@ public class Core : BaseController
     {
         var rotator = new Logs
         {
-            rotate = _settings.LogRotator.Enabled,
-            zip = _settings.LogRotator.Zip,
-            delete = _settings.LogRotator.Delete
+            rotate = _settings.Logging.RotationEnabled,
+            zip = _settings.Logging.RotationCompress,
+            delete = _settings.Logging.RotationDeleteEnabled,
+            days = _settings.Logging.RotationDeleteDays
         };
-        var day = 0;
-        if (!string.IsNullOrEmpty(_settings.LogRotator.Delete_Days))
-        {
-            int.TryParse(_settings.LogRotator.Delete_Days, out day);
-        }
-
-        rotator.days = day;
 
         return rotator;
     }
