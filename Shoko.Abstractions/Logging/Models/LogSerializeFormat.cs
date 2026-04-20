@@ -37,4 +37,11 @@ public enum LogSerializeFormat
     [EnumMember(Value = "legacy")]
     [JsonStringEnumMemberName("legacy")]
     Legacy = 3,
+
+    /// <summary>
+    ///   Console layout.
+    /// </summary>
+    [EnumMember(Value = "console")]
+    [JsonStringEnumMemberName("console")]
+    Console = 4,
 }

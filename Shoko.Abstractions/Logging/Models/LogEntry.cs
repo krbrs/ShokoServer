@@ -78,6 +78,7 @@ public class LogEntry
             LogSerializeFormat.Full => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz}] [{Level.ToShortString()}] [{ThreadId:000}] {Logger}: {Message}{(Exception is { Length: > 0 } ? Environment.NewLine + Exception : string.Empty)}",
             LogSerializeFormat.Json => System.Text.Json.JsonSerializer.Serialize(this),
             LogSerializeFormat.Legacy => $"[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] {Level.ToNLogString()}|{Logger} > {Message}{(Exception is { Length: > 0 } ? $": {Exception}" : string.Empty)}",
+            LogSerializeFormat.Console => $"[{Timestamp:HH:mm:ss}| {Logger.Split('.').Last()} --- {Message}{(Exception is { Length: > 0 } ? $": {Exception}" : string.Empty)}",
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null),
         };
 }
