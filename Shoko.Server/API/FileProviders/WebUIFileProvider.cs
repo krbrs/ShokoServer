@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.FileProviders;
 using Shoko.Abstractions.Core.Services;
 
@@ -11,13 +12,16 @@ public class WebUiFileProvider : PhysicalFileProvider, IFileProvider
 {
     private readonly ISystemUpdateService _webuiUpdateService;
 
+    private readonly IHttpContextAccessor _httpContextAccessor;
+
     private readonly string _prefix;
 
     private IFileInfo? _indexFile;
 
-    public WebUiFileProvider(ISystemUpdateService webuiUpdateService, string prefix, string root) : base(root)
+    public WebUiFileProvider(ISystemUpdateService webuiUpdateService, IHttpContextAccessor httpContextAccessor, string prefix, string root) : base(root)
     {
         _webuiUpdateService = webuiUpdateService;
+        _httpContextAccessor = httpContextAccessor;
         _prefix = prefix;
 
         _webuiUpdateService.WebComponentUpdated += OnUpdateInstalled;
@@ -41,15 +45,12 @@ public class WebUiFileProvider : PhysicalFileProvider, IFileProvider
         if (_prefix is "" && (subpath is "/api" or "/signalr" or "/plex" || subpath.StartsWith("/api/") || subpath.StartsWith("/signalr/") || subpath.StartsWith("/plex/")))
             return new NotFoundFileInfo(subpath);
 
-        var fileInfo = base.GetFileInfo(subpath);
-        if (fileInfo is NotFoundFileInfo || !fileInfo.Exists || subpath is "/" or "/index.html")
-        {
-            // Asset remapping for the default built webui when mounted at the root.
-            if (_prefix is "" && subpath.StartsWith("/webui/") && base.GetFileInfo(subpath[6..]) is { Exists: true, Length: > 0 } webuiFile)
-                return webuiFile;
+        if (subpath is "/manifest.webmanifest" or "/manifest.json")
+            return GetWebManifest();
 
+        var fileInfo = base.GetFileInfo(subpath);
+        if (fileInfo is NotFoundFileInfo or { Exists: false } || subpath is "/" or "/index.html")
             return GetIndexFileInfo();
-        }
 
         return fileInfo;
     }
@@ -67,13 +68,49 @@ public class WebUiFileProvider : PhysicalFileProvider, IFileProvider
             var indexFile = base.GetFileInfo("index.html");
             if (indexFile is { Exists: true, PhysicalPath.Length: > 0, Length: > 0 })
             {
-                var bytes = Encoding.UTF8.GetBytes(File.ReadAllText(indexFile.PhysicalPath).Replace("WEBUI_PREFIX='/webui';", $"WEBUI_PREFIX='{_prefix}';"));
+                var bytes = Encoding.UTF8.GetBytes(
+                    File.ReadAllText(indexFile.PhysicalPath)
+                        .Replace("WEBUI_PREFIX='/webui';", $"WEBUI_PREFIX='{_prefix}';")
+                        .Replace("href=\"/webui/", $"href=\"{_prefix}/")
+                        .Replace("src=\"/webui/", $"src=\"{_prefix}/")
+                );
                 indexFile = new MemoryFileInfo("index.html", bytes);
             }
 
             _indexFile = indexFile ?? new NotFoundFileInfo("index.html");
             return _indexFile;
         }
+    }
+
+    private IFileInfo GetWebManifest()
+    {
+        var manifest = base.GetFileInfo("/manifest.webmanifest");
+        if (manifest is NotFoundFileInfo or { Exists: false })
+            manifest = base.GetFileInfo("/manifest.json");
+        if (manifest is { Exists: true, PhysicalPath.Length: > 0, Length: > 0 })
+        {
+            var prefix = _prefix;
+            if (prefix is "")
+                prefix = "/";
+            var request = _httpContextAccessor.HttpContext!.Request;
+            var baseUrl = new UriBuilder(
+                request.Scheme,
+                request.Host.Host,
+                request.Host.Port ?? (request.Scheme == "https" ? 443 : 80),
+                request.PathBase + prefix,
+                null
+            )
+                .ToString();
+            var baseUrlWithTrailingSlash = baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/";
+            var bytes = Encoding.UTF8.GetBytes(
+                File.ReadAllText(manifest.PhysicalPath)
+                    .Replace("\": \"/webui\"", $"\": \"{baseUrl}\"")
+                    .Replace("\": \"/webui/", $"\": \"{baseUrlWithTrailingSlash}")
+                );
+            return new MemoryFileInfo(manifest.Name, bytes);
+        }
+
+        return new NotFoundFileInfo("/manifest.webmanifest");
     }
 
     /// <summary>
