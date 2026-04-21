@@ -36,6 +36,24 @@ public class ServerStatus
     public bool? CanRestart { get; set; }
 
     /// <summary>
+    /// The time the server started bootstrapping.
+    /// </summary>
+    /// <remarks>
+    /// Only set for authenticated requests.
+    /// </remarks>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public DateTime? BootstrappedAt { get; set; }
+
+    /// <summary>
+    /// The time the server was fully started after the initial bootstrapping.
+    /// </summary>
+    /// <remarks>
+    /// Only set for authenticated requests.
+    /// </remarks>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public DateTime? StartedAt { get; set; }
+
+    /// <summary>
     /// Uptime since bootstrapping took place. Uses hours may be greater than a day.
     /// </summary>
     /// <remarks>
@@ -44,6 +62,14 @@ public class ServerStatus
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public TimeSpan? Uptime { get; set; }
 
+    /// <summary>
+    /// The time it took to start up. Will be zero if not started.
+    /// </summary>
+    /// <remarks>
+    /// Only set for authenticated requests.
+    /// </remarks>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public TimeSpan? StartupTime { get; set; }
     /// <summary>
     /// This is true in situations where there can be absolutely no write operations.
     /// This is for polling. Ideally, a client will use the Events SignalR Hub.

@@ -139,7 +139,10 @@ public class InitController : BaseController
         {
             State = state,
             StartupMessage = message,
+            BootstrappedAt = _systemService.BootstrappedAt.ToUniversalTime(),
+            StartedAt = _systemService.StartedAt?.ToUniversalTime(),
             Uptime = _systemService.Uptime,
+            StartupTime = _systemService.StartupTime ?? TimeSpan.Zero,
             CanShutdown = _systemService.CanShutdown,
             CanRestart = _systemService.CanRestart,
             DatabaseBlocked = new()
