@@ -802,6 +802,11 @@ public class SeriesSizes
     public int Hidden { get; set; }
 
     /// <summary>
+    /// Count of manually linked files.
+    /// </summary>
+    public int ManualLinks { get; set; }
+
+    /// <summary>
     /// Counts of each file source type available within the local collection
     /// </summary>
     [Required]

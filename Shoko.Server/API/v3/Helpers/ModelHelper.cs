@@ -246,14 +246,14 @@ public static class ModelHelper
                 if (!fileSet.Add(file.VideoLocalID))
                     continue;
 
-                var anidbFile = file.ReleaseInfo;
-                if (anidbFile == null)
-                {
-                    sizes.FileSources.Unknown++;
+                var releaseInfo = file.ReleaseInfo;
+                if (releaseInfo is null)
                     continue;
-                }
 
-                switch (anidbFile.Source)
+                if (releaseInfo.HasProviderName("User"))
+                    sizes.ManualLinks++;
+
+                switch (releaseInfo.Source)
                 {
                     case ReleaseSource.Unknown:
                         sizes.FileSources.Unknown++;
