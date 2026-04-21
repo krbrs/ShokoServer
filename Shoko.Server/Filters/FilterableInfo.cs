@@ -60,6 +60,7 @@ public class Filterable : IFilterableInfo
     private readonly Lazy<IReadOnlySet<string>> _creatorIDs;
     private readonly Lazy<IReadOnlyDictionary<CrewRoleType, IReadOnlySet<string>>> _creatorRoles;
     private readonly Lazy<IReadOnlySet<string>> _releaseGroupNames;
+    private readonly Lazy<IReadOnlySet<string>> _releaseProviderNames;
     private readonly Lazy<int> _groupID;
     private readonly Lazy<int> _topLevelGroupID;
     private readonly Lazy<IReadOnlySet<string>> _groupIDs;
@@ -464,5 +465,12 @@ public class Filterable : IFilterableInfo
     public required Func<IReadOnlySet<string>> ReleaseGroupNamesDelegate
     {
         init => _releaseGroupNames = new Lazy<IReadOnlySet<string>>(value);
+    }
+
+    public IReadOnlySet<string> ReleaseProviderNames => _releaseProviderNames.Value;
+
+    public required Func<IReadOnlySet<string>> ReleaseProviderNamesDelegate
+    {
+        init => _releaseProviderNames = new Lazy<IReadOnlySet<string>>(value);
     }
 }

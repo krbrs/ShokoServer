@@ -1,32 +1,39 @@
 using System;
 using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Filtering;
+using Shoko.Abstractions.Video.Services;
 using Shoko.Server.Filters.Interfaces;
 using Shoko.Server.Repositories;
+using Shoko.Server.Utilities;
 
 namespace Shoko.Server.Filters.Info;
 
-public class HasReleaseGroupNameExpression : FilterExpression<bool>, IWithStringParameter
+public class HasReleaseProviderNameExpression : FilterExpression<bool>, IWithStringParameter
 {
-    public HasReleaseGroupNameExpression(string parameter)
+    public HasReleaseProviderNameExpression(string parameter)
     {
         Parameter = parameter;
     }
 
-    public HasReleaseGroupNameExpression() { }
+    public HasReleaseProviderNameExpression() { }
 
     public string Parameter { get; set; }
+
     public override bool TimeDependent => false;
+
     public override bool UserDependent => false;
-    public override string HelpDescription => "This condition passes if any of the anime have the files of specified release group name";
-    public override string[] HelpPossibleParameters => RepoFactory.StoredReleaseInfo.GetUsedReleaseGroups().Select(r => r.Name).ToArray();
+
+    public override string HelpDescription => "This condition passes if any of the anime have the files of specified release provider name";
+
+    public override string[] HelpPossibleParameters => Utils.ServiceContainer.GetRequiredService<IVideoReleaseService>().GetStoredReleaseProviderNames().ToArray();
 
     public override bool Evaluate(IFilterableInfo filterable, IFilterableUserInfo userInfo, DateTime? now)
     {
-        return filterable.ReleaseGroupNames.Contains(Parameter);
+        return filterable.ReleaseProviderNames.Contains(Parameter);
     }
 
-    protected bool Equals(HasReleaseGroupNameExpression other)
+    protected bool Equals(HasReleaseProviderNameExpression other)
     {
         return base.Equals(other) && Parameter == other.Parameter;
     }
@@ -48,19 +55,19 @@ public class HasReleaseGroupNameExpression : FilterExpression<bool>, IWithString
             return false;
         }
 
-        return Equals((HasReleaseGroupNameExpression)obj);
+        return Equals((HasReleaseProviderNameExpression)obj);
     }
 
     public override int GetHashCode()
     {
         return HashCode.Combine(base.GetHashCode(), Parameter);
     }
-    public static bool operator ==(HasReleaseGroupNameExpression left, HasReleaseGroupNameExpression right)
+    public static bool operator ==(HasReleaseProviderNameExpression left, HasReleaseProviderNameExpression right)
     {
         return Equals(left, right);
     }
 
-    public static bool operator !=(HasReleaseGroupNameExpression left, HasReleaseGroupNameExpression right)
+    public static bool operator !=(HasReleaseProviderNameExpression left, HasReleaseProviderNameExpression right)
     {
         return !Equals(left, right);
     }

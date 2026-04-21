@@ -68,4 +68,5 @@ public class TestFilterable : IFilterableInfo
     public IReadOnlySet<string> CreatorIDs { get; init; }
     public IReadOnlyDictionary<CrewRoleType, IReadOnlySet<string>> CreatorRoles { get; init; }
     public IReadOnlySet<string> ReleaseGroupNames { get; init; }
+    public IReadOnlySet<string> ReleaseProviderNames { get; init; }
 }

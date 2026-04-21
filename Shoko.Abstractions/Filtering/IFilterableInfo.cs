@@ -299,4 +299,9 @@ public interface IFilterableInfo
     /// Release Group Names
     /// </summary>
     IReadOnlySet<string> ReleaseGroupNames { get; }
+
+    /// <summary>
+    /// Release Provider Names
+    /// </summary>
+    IReadOnlySet<string> ReleaseProviderNames { get; }
 }

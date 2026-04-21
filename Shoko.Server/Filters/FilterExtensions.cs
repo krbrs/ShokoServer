@@ -168,6 +168,8 @@ public static class FilterExtensions
                 series.VideoLocals.Select(a => a.FirstValidPlace?.RelativePath).WhereNotNull().ToHashSet(),
             ReleaseGroupNamesDelegate = () =>
                 series.VideoLocals.Select(a => a.ReleaseGroup?.Name).WhereNotNull().ToHashSet(),
+            ReleaseProviderNamesDelegate = () =>
+                series.VideoLocals.SelectMany(a => a.ReleaseInfo?.ProviderName.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) ?? []).ToHashSet(),
 
         };
 
@@ -375,6 +377,8 @@ public static class FilterExtensions
                 series.SelectMany(s => s.VideoLocals.Select(a => a.FirstValidPlace?.RelativePath)).WhereNotNull().ToHashSet(),
             ReleaseGroupNamesDelegate = () =>
                 series.SelectMany(s => s.VideoLocals.Select(a => a.ReleaseGroup?.Name)).WhereNotNull().ToHashSet(),
+            ReleaseProviderNamesDelegate = () =>
+                series.SelectMany(s => s.VideoLocals.SelectMany(a => a.ReleaseInfo?.ProviderName.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) ?? [])).ToHashSet(),
         };
         return filterable;
     }
