@@ -157,7 +157,7 @@ public class ServerSettings : IServerSettings, INewtonsoftJsonConfiguration, IHi
     public FileQualityPreferences FileQualityPreferences { get; set; } = new();
 
     /// <inheritdoc />
-    [Display(Name = "Log Rotation")]
+    [Display(Name = "Logging")]
     public LoggingSettings Logging { get; set; } = new();
 
     /// <inheritdoc />

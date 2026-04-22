@@ -30,9 +30,11 @@ public class LogLevelRuleConfiguration : IEquatable<LogLevelRuleConfiguration>
     }
 
     /// <summary>
-    /// Logger name/pattern targeted by this rule.
+    /// Logger name pattern targeted by this rule.
     /// </summary>
-    [Display(Name = "Logger Pattern")]
+    [Display(Name = "Pattern")]
+    [Visibility(Size = DisplayElementSize.Full)]
+    [DefaultValue("")]
     [Required]
     [MinLength(1)]
     public string LoggerNamePattern { get; set; } = string.Empty;

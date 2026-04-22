@@ -22,7 +22,6 @@ public class LoggingSettings
     /// Indicates that we should compress the log files.
     /// </summary>
     [DefaultValue(true)]
-    [RequiresRestart]
     [EnvironmentVariable("LOGGING_ROTATION_COMPRESS")]
     public bool RotationCompress { get; set; } = true;
 
@@ -30,7 +29,6 @@ public class LoggingSettings
     /// Indicates that we should delete older log files.
     /// </summary>
     [DefaultValue(true)]
-    [RequiresRestart]
     [EnvironmentVariable("LOGGING_ROTATION_DELETE_ENABLED")]
     public bool RotationDeleteEnabled { get; set; } = true;
 
@@ -38,7 +36,6 @@ public class LoggingSettings
     /// Number of days to keep log files before deleting.
     /// </summary>
     [Display(Name = "Keep period (days)")]
-    [RequiresRestart]
     [EnvironmentVariable("LOGGING_ROTATION_DELETE_DAYS")]
     [DefaultValue(null)]
     [Range(0, int.MaxValue)]
@@ -55,12 +52,13 @@ public class LoggingSettings
     /// Console layout format for runtime logs.
     /// </summary>
     [DefaultValue(LogSerializeFormat.Console)]
-    [RequiresRestart]
+    [EnvironmentVariable("LOGGING_CONSOLE_FORMAT")]
     public LogSerializeFormat ConsoleFormat { get; set; } = LogSerializeFormat.Console;
 
     /// <summary>
     /// Optional user-defined log level override rules keyed by logger pattern.
     /// </summary>
     [List(ListType = DisplayListType.ComplexInline)]
+    [EnvironmentVariable("LOGGING_LOG_LEVEL_RULES", AllowOverride = true)]
     public List<LogLevelRuleConfiguration> LogLevelRules { get; set; } = [];
 }
