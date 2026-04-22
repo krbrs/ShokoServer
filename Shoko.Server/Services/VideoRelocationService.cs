@@ -718,6 +718,7 @@ public class VideoRelocationService(
             CancellationToken = cancellationTokenSource.Token,
             Series = anime,
             File = place,
+            Video = videoLocal,
             Episodes = episodes,
             Groups = groups,
             AvailableFolders = availableFolders,
