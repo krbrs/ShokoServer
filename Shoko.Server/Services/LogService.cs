@@ -949,7 +949,7 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
             if (_rotationEnabled != logging.RotationEnabled)
             {
                 _rotationEnabled = logging.RotationEnabled;
-                Utils.ServiceContainer.GetRequiredService<ILogService>().StartMaintenance();
+                Utils.ServiceContainer?.GetRequiredService<ILogService>().StartMaintenance();
             }
         }
     }
