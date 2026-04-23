@@ -188,6 +188,7 @@ public class SystemService : ISystemService
 
             Task.Run(() => StartupFailed?.Invoke(this, new(value)));
 
+            _logger.LogError(value, "Failed to Start Server: {Message}", value.Message);
             _startupTaskSource?.SetException(value);
             _startupTaskSource = null;
         }
