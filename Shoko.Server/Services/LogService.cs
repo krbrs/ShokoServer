@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Timers;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NLog;
 using NLog.Config;
@@ -25,6 +26,7 @@ using Shoko.Server.API.SignalR.NLog;
 using Shoko.Server.Extensions;
 using Shoko.Server.Logging;
 using Shoko.Server.Settings;
+using Shoko.Server.Utilities;
 
 using ELogLevel = Microsoft.Extensions.Logging.LogLevel;
 using NLogLevel = NLog.LogLevel;
@@ -40,10 +42,14 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 
     #region Maintenance
 
-    private readonly Timer _timer = new(86400000) { AutoReset = true };
+    private readonly Timer _timer = new(TimeSpan.FromDays(1));
 
     public void StartMaintenance()
     {
+        _timer.Stop();
+        if (!settingsProvider.GetSettings().Logging.RotationEnabled)
+            return;
+
         _timer.Elapsed -= HandleTimerElapsed;
         _timer.Elapsed += HandleTimerElapsed;
         RunRotationMaintenance();
@@ -880,6 +886,8 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
 
     #region Static Methods
 
+    private static bool _rotationEnabled = false;
+
     private static bool _traceLogging = false;
 
     private static List<LogLevelRuleConfiguration> _logLevelRules = [];
@@ -937,6 +945,12 @@ public class LogService(ILogger<LogService> logger, IApplicationPaths applicatio
                 updated = true;
             if (updated)
                 LogManager.ReconfigExistingLoggers();
+
+            if (_rotationEnabled != logging.RotationEnabled)
+            {
+                _rotationEnabled = logging.RotationEnabled;
+                Utils.ServiceContainer.GetRequiredService<ILogService>().StartMaintenance();
+            }
         }
     }
 
