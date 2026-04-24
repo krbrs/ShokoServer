@@ -81,11 +81,8 @@ public class FolderController : BaseController
                     return null;
                 }
 
-                foreach (var format in _excludedFormats)
-                {
-                    if (driveFormat == format)
-                        return null;
-                }
+                if (_excludedFormats.Contains(driveFormat))
+                    return null;
 
                 ChildItems childItems = null;
                 try
