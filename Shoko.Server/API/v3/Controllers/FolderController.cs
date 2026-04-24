@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Shoko.Abstractions.Extensions;
+using Shoko.Abstractions.Web.Attributes;
 using Shoko.Server.API.Annotations;
 using Shoko.Server.API.v3.Models.Shoko;
 using Shoko.Server.Settings;
@@ -15,7 +16,9 @@ namespace Shoko.Server.API.v3.Controllers;
 [ApiController]
 [Route("/api/v{version:apiVersion}/[controller]")]
 [ApiV3]
-[Authorize]
+[InitFriendly]
+[DatabaseBlockedExempt]
+[Authorize(Roles = "admin,init")]
 public class FolderController : BaseController
 {
     private readonly ILogger<FolderController> _logger;
