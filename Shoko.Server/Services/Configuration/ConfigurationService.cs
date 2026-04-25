@@ -309,6 +309,25 @@ public partial class ConfigurationService : IConfigurationService
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Validate<TConfig>(TConfig config) where TConfig : class, IConfiguration, new()
         => ValidateInternal(GetConfigurationInfo<TConfig>(), SerializeInternal(config), config).Errors;
 
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Validate(string json, JsonSchema schema)
+    {
+        var (token, results) = new JsonSchemaValidatorBase().Validate(json, schema);
+        var errorDict = new Dictionary<string, List<string>>();
+        foreach (var error in GetAllValidationErrorsForCollection(results))
+        {
+            // Ignore the "$schema" property at the root of the document if it is present.
+            if (error is { Path: "#/$schema", Property: "$schema", Kind: ValidationErrorKind.NoAdditionalPropertiesAllowed })
+                continue;
+
+            var path = string.IsNullOrEmpty(error.Path) ? string.Empty : error.Path.StartsWith("#/") ? error.Path[2..] : error.Path;
+            if (!errorDict.TryGetValue(path, out var errorList))
+                errorDict[path] = errorList = [];
+
+            errorList.Add(GetErrorMessage(error));
+        }
+        return errorDict.Select(a => KeyValuePair.Create(a.Key, (IReadOnlyList<string>)a.Value)).ToDictionary();
+    }
+
     private (JToken Token, Dictionary<string, IReadOnlyList<string>> Errors) ValidateInternal<TConfig>(ConfigurationInfo info, string json, TConfig? config, bool saveValidation = false, bool loadValidation = false) where TConfig : class, IConfiguration, new()
     {
         var (token, results) = new ShokoJsonSchemaValidator<TConfig>(this._logger, this, info, _loadedConfigurations.TryGetValue(info.ID, out var config0) ? (config0 as TConfig) ?? config : config, saveValidation, loadValidation).Validate(json);
@@ -968,6 +987,14 @@ public partial class ConfigurationService : IConfigurationService
             _serializedSchemas[info] = schemaJson;
             return schemaJson;
         }
+    }
+
+    public JsonSchema GenerateSchema(Type type)
+    {
+        var id = GetID(type);
+        var wrappedSchema = _jsonSchemaGenerator.GetSchemaForType(type);
+        wrappedSchema.Schema.Id = id.ToString();
+        return wrappedSchema.Schema;
     }
 
     private void EnsureSchemaExists(ConfigurationInfo info)

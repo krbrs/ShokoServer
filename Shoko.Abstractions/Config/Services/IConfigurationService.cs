@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NJsonSchema;
 using Shoko.Abstractions.Config.Enums;
 using Shoko.Abstractions.Config.Events;
 using Shoko.Abstractions.Config.Exceptions;
@@ -162,6 +163,21 @@ public interface IConfigurationService
     ///   A read-only dictionary of validation errors per property path.
     /// </returns>
     IReadOnlyDictionary<string, IReadOnlyList<string>> Validate<TConfig>(TConfig config) where TConfig : class, IConfiguration, new();
+
+    /// <summary>
+    ///   Validates a stringified JSON configuration against the specified
+    ///   schema using the custom validator.
+    /// </summary>
+    /// <param name="json">
+    ///   The stringified JSON configuration.
+    /// </param>
+    /// <param name="schema">
+    ///   The JSON schema.
+    /// </param>
+    /// <returns>
+    ///   A read-only dictionary of validation errors per property path.
+    /// </returns>
+    IReadOnlyDictionary<string, IReadOnlyList<string>> Validate(string json, JsonSchema schema);
 
     /// <summary>
     ///   Perform a custom action on the configuration instance against the
@@ -490,6 +506,18 @@ public interface IConfigurationService
     ///   The serialized JSON schema for the configuration.
     /// </returns>
     string GetSchema(ConfigurationInfo info);
+
+    /// <summary>
+    ///   Generates a JSON schema for the specified type using the custom schema
+    ///   generator.
+    /// </summary>
+    /// <param name="type">
+    ///   The type.
+    /// </param>
+    /// <returns>
+    ///   The JSON schema.
+    /// </returns>
+    JsonSchema GenerateSchema(Type type);
 
     /// <summary>
     ///   Serializes the specified configuration to JSON.
