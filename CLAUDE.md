@@ -10,7 +10,7 @@ dotnet test Shoko.Tests/Shoko.Tests.csproj --filter "FullyQualifiedName~ClassNam
 dotnet test Shoko.IntegrationTests/Shoko.IntegrationTests.csproj
 ```
 
-Target framework: `.NET 10.0`. Configurations: `Debug`, `Release`, `ApiLogging`, `Benchmarks`.
+Target framework: `.NET 10.0`. Configurations: `Debug`, `Release`, `ApiLogging`, `Benchmarks` (server + benchmarks only; tests use `Debug`/`Release`).
 
 ## Code Style
 
@@ -23,17 +23,22 @@ Target framework: `.NET 10.0`. Configurations: `Debug`, `Release`, `ApiLogging`,
 
 ### Project Layout
 
-- **`Shoko.Abstractions`** — NuGet package for plugin authors. Defines `IPlugin`, `IShoko`, and all service/metadata/video/user interfaces. No implementation logic lives here. Update this before `Shoko.Server` when changing public contracts.
+- **`Shoko.Abstractions`** — NuGet package for plugin authors. Defines the interface contract between the core and plugins (`IPlugin`, `IShokoSeries`, `IShokoEpisode`, `IVideo`, `IUser`, and all service/metadata/video/user interfaces). Only update this when the plugin contract itself needs to change.
 - **`Shoko.Server`** — All implementation: API, database, repositories, services, scheduling, providers, models.
 - **`Shoko.CLI`** — Headless server entry point. Hosts `SystemService` as `IHostedService`.
-- **`Shoko.TrayService`** — Windows tray app (Avalonia) embedding the server.
+- **`Shoko.TrayService`** — Cross-platform tray app (Avalonia) embedding the server. Runs on Windows, Linux, and macOS.
 - **`Plugins/`** — Built-in plugins (`ReleaseExporter`, `RelocationPlus`, `OfflineImporter`) built as separate projects and loaded at runtime.
+- **`Shoko.Tests`** — Unit tests.
+- **`Shoko.IntegrationTests`** — Integration tests.
+- **`Shoko.TestData`** — Shared test data.
+- **`Shoko.Benchmarks`** — BenchmarkDotNet benchmarks.
 
 ### Startup Sequence
 
-`Program.cs` → `SystemService` constructor (NLog, `PluginManager`, `ConfigurationService`, `SettingsProvider`) → `SystemService.StartAsync()` (DB migrations via `DatabaseFixes`, build `IHost`, init Quartz scheduler) → ASP.NET Core listens on port 8111.
+`Program.cs` → `SystemService` constructor (NLog, `PluginManager`, `ConfigurationService`, `SettingsProvider`) → `SystemService.StartAsync()` (builds and starts `IHost` / ASP.NET Core on port 8111) → `SystemService.LateStart()` (DB migrations via `DatabaseFixes`, init Quartz scheduler, UDP connection handler, file watchers).
 
-Global service container is exposed via `Utils.ServiceContainer = _webHost.Services` for legacy code that predates DI.
+Global service container is exposed via `Utils.ServiceContainer = _webHost.Services` for legacy code that predates DI,
+and should not be used for new code unless DI is not an option and only as a last resort.
 
 ### API Pipeline
 
@@ -41,8 +46,8 @@ Global service container is exposed via `Utils.ServiceContainer = _webHost.Servi
 
 1. Sentry exception handling (if not opted out)
 2. `DeveloperExceptionPage` (DEBUG / `AlwaysUseDeveloperExceptions`)
-3. Static files — WebUI served via `WebUiFileProvider` at configurable path
-4. Swagger UI (if enabled)
+3. Swagger UI (if enabled) — configurable path via `WebSettings.SwaggerUIPrefix`
+4. Static files (if enabled) — WebUI served via `WebUiFileProvider` at configurable path (`WebSettings.WebUIPublicPath`, defaults to `/webui`)
 5. `UseRouting`
 6. `UseAuthentication` — custom "ShokoServer" scheme
 7. `UseAuthorization` — policies: `"admin"` (IsAdmin == 1), `"init"` (setup user only)
@@ -59,19 +64,21 @@ Global service container is exposed via `Utils.ServiceContainer = _webHost.Servi
 - `RedirectConstraint` — redirects root `/` to WebUI public path if configured
 
 **Authentication** (`Shoko.Server/API/Authentication/`):
-- `CustomAuthHandler` extracts API key from: `apikey` header, `apikey` query param, `Bearer` token (SignalR), or `access_token` query param
+- `CustomAuthHandler` extracts API key from: `apikey` header, `apikey` query param, `Bearer` token (SignalR), or `access_token` query param (SignalR)
 - Validates against `AuthTokensRepository`; builds `ClaimsPrincipal` with user ID, role, device name
 - During first-run setup, `InitUser` (synthetic admin) is used — no real auth required
-- No sessions; every request is authenticated by API key
+- No cookie sessions; every request is authenticated by API key
 
-**API versioning**: `v0` (Plex webhooks + legacy), `v1`/`v2` (legacy REST, can be kill-switched), `v3` (current, all new endpoints). Version resolved from query string, `api-version` header, or custom `ShokoApiReader`. `ApiVersionControllerFeatureProvider` excludes disabled versions at startup via `Web.DisabledAPIVersions`.
+**API versioning**: `v0` (version-less: auth + legacy Plex webhooks), `v1` (legacy REST, off by default), `v2` (legacy REST, can be kill-switched), `v3` (current, all new endpoints). Version can be resolved from query string, `api-version` header, or custom `ShokoApiReader`. `ApiVersionControllerFeatureProvider` excludes disabled versions at startup via individual flags (`EnableAPIv1`, `EnableAPIv2`, `EnableAPIv3`, `EnableLegacyPlexAPI`, `EnableAuthAPI`).
+
+Plugin controllers are registered via `AddPluginControllers` during API setup.
 
 ### SignalR (Real-time Events)
 
-Two hubs, both require `[Authorize]`:
+Two hubs, both behind `[Authorize]`:
 
-- **`LoggingHub`** (`/signalr/logging`) — streams buffered server logs to connecting clients
-- **`AggregateHub`** (`/signalr/aggregate`) — subscription model; clients call `feed.join_single` / `feed.join_many` etc. to subscribe to event categories
+- **`LoggingHub`** (`/signalr/logging`) — streams buffered server logs to connecting clients, separate from the aggregate hub because it can become noisy, fast.
+- **`AggregateHub`** (`/signalr/aggregate`) — subscription model; clients call `feed.join_single` / `feed.join_many` etc. to subscribe to event categories.
 
 Event emitters bridge internal domain events to SignalR: `AnidbEventEmitter`, `AvdumpEventEmitter`, `ConfigurationEventEmitter`, `FileEventEmitter`, `ManagedFolderEventEmitter`, `MetadataEventEmitter`, `NetworkEventEmitter`, `QueueEventEmitter`, `ReleaseEventEmitter`, `UserDataEventEmitter`, `UserEventEmitter`.
 
@@ -86,6 +93,10 @@ NHibernate-mapped entities. Organized by source:
 - `Shoko.Server.Models.TMDB` — TMDB metadata cache: `TMDB_Show`, `TMDB_Movie`, `TMDB_Episode`, `TMDB_Image`, etc.
 - `Shoko.Server.Models.CrossReference` — cross-reference tables linking providers (AniDB↔TMDB, AniDB↔MAL, AniDB↔Trakt)
 - `Shoko.Server.Models.Release` — release/video file associations
+- `Shoko.Server.Models.Trakt` — Trakt metadata cache
+- `Shoko.Server.Models.Image` — image metadata
+- `Shoko.Server.Models.Internal` — internal tracking entities
+- `Shoko.Server.Models.Legacy` — legacy entities scheduled for removal once APIv1 is finally removed or before if they can be mocked using other methods/models
 
 NHibernate mappings live in `Shoko.Server/Mappings/` as `*Map.cs` files. Schemas should be maintained to match, as they will be migrated to Entity Framework Code-First in a future version.
 
@@ -104,6 +115,7 @@ Never persisted; built from persistence models in controllers/services.
 Two variants in `Shoko.Server/Repositories/`:
 - **`Cached/`** — `BaseCachedRepository<T, S>` loads all rows at startup into a `PocoCache` (from `NutzCode.InMemoryIndex`). Reads are `ReaderWriterLockSlim`-protected. Each repository builds typed indexes via `PopulateIndexes()` (e.g., `_animeIDs = Cache.CreateIndex(a => a.AnimeID)`). All writes go to DB then invalidate/update the in-memory cache. Use for hot data.
 - **`Direct/`** — no cache; hits DB on every call. Use for infrequently accessed or large data.
+- `BaseDirectRepository` is the base class.
 
 Always prefer a cached repository over a direct one when both exist for the same entity.
 
@@ -113,7 +125,7 @@ Quartz.NET with a custom in-memory `ThreadPooledJobStore` (`Shoko.Server/Schedul
 
 ### Plugin System
 
-`PluginManager` scans the `/plugins/` directory, loads assemblies, finds `IPlugin` implementations via reflection, and registers them with the DI container. Plugins call `IPluginManager.RegisterPlugins(services)` to add their own services. `CorePlugin` is the built-in plugin that ships with the server.
+`PluginManager` scans the `/plugins/` directory, loads assemblies, finds `IPlugin` implementations via reflection, and registers their services via `RegisterPlugins(IServiceCollection)`. `InitPlugins()` instantiates the plugins after the service container is available. `CorePlugin` is the built-in plugin that ships with the server.
 
 ### Database Migrations
 
@@ -137,18 +149,24 @@ ShokoManagedFolder (1) ──< VideoLocal_Place >── (1) VideoLocal
 
 ### File → Episode
 
-**`CrossRef_File_Episode`** is the join between a file and an AniDB episode, keyed by ED2K hash + file size (not VideoLocalID). It stores:
+**`StoredReleaseInfo`** is the source of truth for a file's episode mapping. It caches the full response from a release provider for a given ED2K hash + file size, including:
+- Precise episode percentage ranges
+- Release group, video/audio codec, language, and quality information
+- Cross-references to anime/episodes
+
+A single file can map to multiple episodes (e.g., a combined OVA file). Multiple files can map to the same episode (alternative releases).
+
+**`CrossRef_File_Episode`** is a backwards-compatible join table kept in sync with `StoredReleaseInfo`. It stores a simplified view of the same mapping, keyed by ED2K hash + file size (not VideoLocalID):
 - `Percentage` — what fraction of the episode this file covers (100 for a single-episode file, 50 for a 2-part release)
 - `EpisodeOrder` — which part this file is in a multi-file episode
+- `IsManuallyLinked` — indicates the user was involved in creating this link
 
-A single file can map to multiple episodes (e.g., a combined OVA file). Multiple files can map to the same episode (alternative releases). The `IsManuallyLinked` flag distinguishes user-created links from AniDB-sourced ones.
-
-**`StoredReleaseInfo`** hangs off `CrossRef_File_Episode` and holds the release group, video/audio codec, language, and quality information returned by AniDB's FILE command.
+Because `StoredReleaseInfo` captures precise percentage ranges rather than a single percentage value, it should be treated as the authoritative mapping.
 
 ```
 VideoLocal (hash+size) ──< CrossRef_File_Episode >── AniDB_Episode
-                                │
-                          StoredReleaseInfo
+        │                       │
+   StoredReleaseInfo ───────────┘
 ```
 
 ### Episode → Series → Group
@@ -200,7 +218,7 @@ HashFileJob  (Shoko.Server/Scheduling/Jobs/Shoko/HashFileJob.cs)
         │
         ▼
 ProcessFileJob  (Shoko.Server/Scheduling/Jobs/Shoko/ProcessFileJob.cs)
-  Sends FILE command to AniDB UDP API (hash + size)
+  Queries release providers for episode mapping (hash + size)
   Creates CrossRef_File_Episode + StoredReleaseInfo
   Adds file to AniDB MyList (unless skipped)
         │  [on new AnimeID]
@@ -238,7 +256,7 @@ Several models exist solely to avoid redundant I/O or external API calls. Jobs c
 
 **`VideoLocal_HashDigest`** (`Models/Shoko/VideoLocal_HashDigest.cs`) — stores all computed hash types (ED2K, CRC32, MD5, SHA1) for a `VideoLocal` as `Type + Value` rows. Written by `VideoHashingService` during `HashFileJob`. Read when displaying or cross-referencing file hashes without recomputing.
 
-**`StoredReleaseInfo`** (`Models/Release/StoredReleaseInfo.cs`) — caches the full AniDB FILE command response: ED2K + FileSize, provider ID, release URI, source (BluRay/Web/etc.), codec flags (`IsCensored`, `IsCreditless`, `IsChaptered`), version, and cross-references to anime/episodes. Written by `IVideoReleaseService.FindReleaseForVideo()` inside `ProcessFileJob`. `ProcessFileJob` calls `GetCurrentReleaseForVideo()` first — if a `StoredReleaseInfo` already exists for the hash, the AniDB UDP call is skipped entirely. Queried by the API via `GetByEd2kAndFileSize()`, `GetByReleaseURI()`, `GetByAnidbEpisodeID()`.
+**`StoredReleaseInfo`** (`Models/Release/StoredReleaseInfo.cs`) — caches the full release provider response: ED2K + FileSize, provider ID, release URI, source (BluRay/Web/etc.), codec flags (`IsCensored`, `IsCreditless`, `IsChaptered`), version, and cross-references to anime/episodes. Written by `IVideoReleaseService.FindReleaseForVideo()` inside `ProcessFileJob`. `ProcessFileJob` calls `GetCurrentReleaseForVideo()` first — if a `StoredReleaseInfo` already exists for the hash, the release provider lookup is skipped entirely. Queried by the API via `GetByEd2kAndFileSize()`, `GetByReleaseURI()`, `GetByAnidbEpisodeID()`.
 
 **`AniDB_AnimeUpdate`** (`Models/AniDB/AniDB_AnimeUpdate.cs`) — one row per `AnimeID`, storing only `UpdatedAt`. Written by `RequestGetAnime.UpdateAccessTime()` after every successful AniDB HTTP response. Read by the same method to decide whether the local `AniDB_Anime` record is stale enough to warrant a new fetch. `GetAniDBAnimeJob` respects `IgnoreTimeCheck` to force a refresh past this gate.
 
@@ -250,13 +268,22 @@ Several models exist solely to avoid redundant I/O or external API calls. Jobs c
 
 ### Unrecognized Files
 
-If AniDB's FILE command returns no match, `ProcessFileJob` marks the file as unrecognized. It will not automatically retry until the user either manually links the file to an episode via the API, or triggers an AVDump (`AvdumpFileJob`) to submit the file's hash to AniDB for future recognition.
+If no release provider returns a match, `ProcessFileJob` marks the file as unrecognized. The file can be linked to one or more episodes via the API or by plugins.
+
+**AVDump** (`AvdumpFileJob`) is an on-demand utility that submits a file's media info and hashes to AniDB for manual entry. It is unrelated to unrecognized file handling and only runs on explicit user/plugin request.
 
 ### Concurrency Limits
 
-| Job | Concurrency | Reason |
-|-----|-------------|--------|
+| Job | Default Concurrency (Max Concurrency) | Reason |
+|-----|---------------------------------------|--------|
 | `HashFileJob` | 2 | I/O bound |
+| `MediaInfoJob` | 2 | I/O bound |
 | `ProcessFileJob` | 4 | AniDB UDP rate limit |
-| `GetAniDBAnimeJob` | 1 per anime ID (lock) | Prevent duplicate fetches |
-| `SearchTmdbJob` / `UpdateTmdbShowJob` | 8–24 | TMDB allows higher throughput |
+| `GetAniDBAnimeJob` | 1 (1) | AniDB HTTP + bulkhead limit |
+| `AVDumpFilesJob` | 1 (16) | AVDump resource limits |
+| `SearchTmdbJob` | 8 (24) | TMDB allows higher throughput |
+| `UpdateTmdbShowJob` | 1 (12) | TMDB allows higher throughput |
+| `UpdateTmdbMovieJob` | 1 (12) | TMDB allows higher throughput |
+| `DownloadAniDBImageJob` | 8 (16) | Image download throughput |
+| `DownloadTmdbImageJob` | 12 (24) | Image download throughput |
+| `ValidateAllImagesJob` | 1 (1) | Sequential validation |
