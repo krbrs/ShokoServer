@@ -109,6 +109,33 @@ jobs:
           path: webui/
           retention-days: 1
 
+  offline-importer:
+    runs-on: ubuntu-latest
+
+    name: Download Offline Importer Plugin
+
+    steps:
+      - name: Get Latest Stable Offline Importer Release
+        id: plugin_release
+        run: |
+          download_url=$(curl -s https://api.github.com/repos/revam/dotnet-shoko-plugin-offline-importer/releases/latest | jq -r '.assets[0].browser_download_url')
+          echo "download_url=${download_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Download and Extract Offline Importer
+        run: |
+          mkdir -p plugins
+          curl -L "${{ steps.plugin_release.outputs.download_url }}" -o plugins/latest.zip
+          cd plugins
+          unzip -o latest.zip
+          rm latest.zip
+
+      - name: Upload Offline Importer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-importer
+          path: plugins/
+          retention-days: 1
+
   cli-release:
     runs-on: ubuntu-latest
 
@@ -116,6 +143,7 @@ jobs:
       - current_info
       - plugin-nuget
       - webui
+      - offline-importer
 
     strategy:
       matrix:
@@ -147,6 +175,12 @@ jobs:
         with:
           name: webui
           path: Shoko.Server/webui
+
+      - name: Download Offline Importer
+        uses: actions/download-artifact@v4
+        with:
+          name: offline-importer
+          path: Shoko.Server/plugins
 
       - name: Replace Sentry DSN and other keys
         shell: pwsh
@@ -187,6 +221,7 @@ jobs:
       - current_info
       - plugin-nuget
       - webui
+      - offline-importer
 
     strategy:
       matrix:
@@ -206,6 +241,12 @@ jobs:
         with:
           name: webui
           path: Shoko.Server/webui
+
+      - name: Download Offline Importer
+        uses: actions/download-artifact@v4
+        with:
+          name: offline-importer
+          path: Shoko.Server/plugins
 
       - name: Replace Sentry DSN and other keys
         shell: pwsh
@@ -246,6 +287,7 @@ jobs:
       - current_info
       - plugin-nuget
       - webui
+      - offline-importer
 
     strategy:
       matrix:
@@ -264,6 +306,12 @@ jobs:
         with:
           name: webui
           path: Shoko.Server/webui
+
+      - name: Download Offline Importer
+        uses: actions/download-artifact@v4
+        with:
+          name: offline-importer
+          path: Shoko.Server/plugins
 
       - name: Replace Sentry DSN and other keys
         shell: pwsh
@@ -298,6 +346,7 @@ jobs:
       - current_info
       - plugin-nuget
       - webui
+      - offline-importer
 
     strategy:
       matrix:
@@ -316,6 +365,12 @@ jobs:
         with:
           name: webui
           path: Shoko.Server/webui
+
+      - name: Download Offline Importer
+        uses: actions/download-artifact@v4
+        with:
+          name: offline-importer
+          path: Shoko.Server/plugins
 
       - name: Replace Sentry DSN and other keys
         shell: pwsh
@@ -381,6 +436,7 @@ jobs:
       - current_info
       - plugin-nuget
       - webui
+      - offline-importer
 
     strategy:
       fail-fast: false
@@ -405,6 +461,12 @@ jobs:
         with:
           name: webui
           path: Shoko.Server/webui
+
+      - name: Download Offline Importer
+        uses: actions/download-artifact@v4
+        with:
+          name: offline-importer
+          path: Shoko.Server/plugins
 
       - name: Replace Sentry DSN and other keys
         shell: pwsh
@@ -535,10 +597,10 @@ jobs:
           environment: 'stable'
           version: ${{ needs.current_info.outputs.version }}
 
-  cleanup-webui:
+  cleanup-artifacts:
     runs-on: ubuntu-latest
 
-    name: Remove Web UI Artifact
+    name: Remove Build Artifacts
 
     needs:
       - sentry-upload
@@ -548,3 +610,8 @@ jobs:
         uses: geekyeggo/delete-artifact@v5
         with:
           name: webui
+
+      - name: Remove Offline Importer Artifact
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: offline-importer

@@ -22,10 +22,6 @@
     <ApplicationIcon>db.ico</ApplicationIcon>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
-  <PropertyGroup>
-    <!-- Define plugin names here -->
-    <PluginNames>ReleaseExporter;OfflineImporter;RelocationPlus</PluginNames>
-  </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'ApiLogging' ">
     <DefineConstants>LOGWEB;DEBUG</DefineConstants>
   </PropertyGroup>
@@ -34,7 +30,7 @@
     <Compile Include="..\SharedAssemblyInfo.cs" Link="Properties\SharedAssemblyInfo.cs" />
     <Resource Include="db.ico" />
     <Resource Include="**\*.txt" />
-    <Content Include="plugins\*.md" CopyToOutputDirectory="Always" />
+    <Content Include="plugins\**\*" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="webui\**\*" CopyToOutputDirectory="PreserveNewest" />
     <Resource Remove="bin\**\*" />
     <Resource Remove="obj\**\*" />
@@ -52,17 +48,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Shoko.Abstractions\Shoko.Abstractions.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-      <ProjectsToInclude Include="..\plugins\**\*.csproj">
-          <PluginName>$([System.String]::new('%(Filename)').SubString(13))</PluginName>
-          <KeepThis Condition=" '$([System.Text.RegularExpressions.Regex]::IsMatch($(PluginNames), &quot;(^;?|;)\b%(PluginName)\b(;|;?$)&quot;))' != 'true'">false</KeepThis>
-      </ProjectsToInclude>
-      <ProjectsToInclude Remove="@(ProjectsToInclude)" MatchOnMetadata="KeepThis" />
-      <ProjectReference Include="@(ProjectsToInclude)">
-          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-          <OutputItemType>CopyToPublishDirectory</OutputItemType>
-      </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="DeepCloner" Version="0.10.4" />
@@ -141,37 +126,6 @@
       <HintPath>..\Dependencies\Quartz\Quartz.Server.dll</HintPath>
     </Reference>
   </ItemGroup>
-  <Target
-    Name="MovePluginReferencesOutput"
-    DependsOnTargets="CopyFilesToOutputDirectory;GetCopyToOutputDirectoryItems;Build"
-    AfterTargets="CopyFilesToOutputDirectory;GetCopyToOutputDirectoryItems;Build"
-  >
-      <Message Text="[MovePluginReferencesOutput] Starting plugin move" Importance="high" />
-      <ItemGroup>
-          <OutputPlugins Include="$(OutputPath)%(ProjectsToInclude.Filename).dll" />
-          <OutputPlugins Include="$(OutputPath)%(ProjectsToInclude.Filename).pdb" />
-          <OutputPlugins Include="$(OutputPath)%(ProjectsToInclude.Filename).xml" />
-      </ItemGroup>
-      <Message Text="[MovePluginReferencesOutput] Moving to: $(OutputPath)plugins" Importance="normal" />
-      <Copy SourceFiles="@(OutputPlugins)" DestinationFolder="$(OutputPath)plugins" />
-      <Message Text="[MovePluginReferencesOutput] Finished plugin move" Importance="high" />
-  </Target>
-  <Target
-    Name="MovePluginReferencesOutputForPublish"
-    DependsOnTargets="MovePluginReferencesOutput"
-    AfterTargets="MovePluginReferencesOutput;CopyFilesToOutputDirectory;GetCopyToOutputDirectoryItems;Build"
-    Condition="'$(_IsPublishing)' == 'true'"
-  >
-      <Message Text="[MovePluginReferencesOutputForPublish] Starting plugin move for publish" Importance="high" />
-      <ItemGroup>
-          <PublishedPlugins Include="$(OutputPath)%(ProjectsToInclude.Filename).dll" />
-          <PublishedPlugins Include="$(OutputPath)%(ProjectsToInclude.Filename).pdb" />
-          <PublishedPlugins Include="$(OutputPath)%(ProjectsToInclude.Filename).xml" />
-      </ItemGroup>
-      <Message Text="[MovePluginReferencesOutputForPublish] Moving to: $(PublishDir)plugins" Importance="normal" />
-      <Copy SourceFiles="@(PublishedPlugins)" DestinationFolder="$(PublishDir)plugins" />
-      <Message Text="[MovePluginReferencesOutputForPublish] Finished publish plugin move" Importance="high" />
-  </Target>
   <Target Name="PluginAssemblyVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo" Condition="Exists('../.git')">
     <PropertyGroup Condition="$(OS) == 'Windows_NT'">
       <GitDateFormat>%%aI</GitDateFormat>
