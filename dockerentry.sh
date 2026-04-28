@@ -104,8 +104,8 @@ ENABLE_SHUTDOWN=${ENABLE_SHUTDOWN:-false}
 ENABLE_RESTART=${ENABLE_RESTART:-true}
 
 ARGS=""
-[ "$ENABLE_SHUTDOWN" = "true" ] && ARGS="$ARGS --enabled-shutdown"
-[ "$ENABLE_RESTART" = "true" ] && ARGS="$ARGS --enable-restart"
+[ "$ENABLE_SHUTDOWN" = "true" ] && ARGS="$ARGS --shutdown-enabled"
+[ "$ENABLE_RESTART" = "true" ] && ARGS="$ARGS --restart-enabled"
 
 # Run the server, and restart it if it exits with code 140 (Custom restart exit code).
 # Set up signal forwarding to the dotnet process
