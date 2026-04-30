@@ -149,6 +149,12 @@ public class RelocationApiCoordinatorTests
 
         configurationService.Setup(service => service.Validate(providerInfo.ConfigurationInfo!, It.IsAny<string>()))
             .Returns(new Dictionary<string, IReadOnlyList<string>>());
+        configurationService.Setup(service => service.Validate(providerInfo.ConfigurationInfo!, It.IsAny<IConfiguration>()))
+            .Returns(new Dictionary<string, IReadOnlyList<string>>());
+        configurationService.Setup(service => service.Deserialize(providerInfo.ConfigurationInfo!, It.IsAny<string>()))
+            .Returns(new FakeRelocationConfig() { Name = "Stored" });
+        configurationService.Setup(service => service.Serialize(It.IsAny<IConfiguration>()))
+            .Returns((IConfiguration config) => $"{{\"Name\":\"{((FakeRelocationConfig)config).Name}\"}}");
 
         var coordinator = new RelocationApiCoordinator(new Mock<IPluginManager>().Object, configurationService.Object, new Mock<IVideoService>().Object, relocationService.Object);
 
@@ -173,7 +179,7 @@ public class RelocationApiCoordinatorTests
         var relocationService = new Mock<IVideoRelocationService>();
         relocationService.Setup(service => service.GetProviderInfo(providerId)).Returns(providerInfo);
 
-        configurationService.Setup(service => service.Validate(providerInfo.ConfigurationInfo!, "{\"name\":\"broken\"}"))
+        configurationService.Setup(service => service.Validate(providerInfo.ConfigurationInfo!, It.IsAny<string>()))
             .Returns(new Dictionary<string, IReadOnlyList<string>>() { ["name"] = ["Required"] });
 
         var coordinator = new RelocationApiCoordinator(new Mock<IPluginManager>().Object, configurationService.Object, new Mock<IVideoService>().Object, relocationService.Object);

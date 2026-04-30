@@ -124,8 +124,8 @@
 
 ## Task 14: Validate the refactor end to end
 
-- [ ] Run the relevant test suite for relocation controller and relocation service coverage.
-- [ ] Verify the new routes, aliases, and response semantics behave as intended.
+- [X] Run the relevant test suite for relocation controller and relocation service coverage.
+- [X] Verify the new routes, aliases, and response semantics behave as intended.
 - [ ] Confirm the WebUI can still discover, inspect, preview, and relocate configurations during the transition period.
 
 **Depends on**: Task 11, Task 12, Task 13  

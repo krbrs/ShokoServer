@@ -125,8 +125,8 @@
 
 ## Task 14: Validate the refactor end to end
 
-- [ ] Run the relevant test suite for configuration controller and configuration service coverage.
-- [ ] Verify the new routes, aliases, and response semantics behave as intended.
+- [X] Run the relevant test suite for configuration controller and configuration service coverage.
+- [X] Verify the new routes, aliases, and response semantics behave as intended.
 - [ ] Confirm the WebUI can still discover, read, and update configurations during the transition period.
 
 **Depends on**: Task 11, Task 12, Task 13
