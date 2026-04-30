@@ -108,7 +108,7 @@
 - [X] Add tests for reading a pipe configuration by ID.
 - [X] Add tests for full updates and partial updates.
 - [X] Add tests for preview failures, batch relocation validation failures, unsupported operations, and unavailable providers.
-- [ ] Add tests for compatibility routes if they remain enabled.
+- [X] Add tests for compatibility routes if they remain enabled.
 
 **Depends on**: Task 7, Task 8, Task 9, Task 10  
 **Outcome**: The full editing and relocation workflow is covered.
