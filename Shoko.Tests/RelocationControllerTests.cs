@@ -36,7 +36,9 @@ public class RelocationControllerTests
         relocationService.Setup(service => service.GetAvailableProviders()).Returns([providerInfo]);
 
         var primary = controller.GetAvailableRelocationProviders(filter);
+#pragma warning disable CS0618
         var legacy = controller.GetAvailableRelocationProvidersLegacy(filter);
+#pragma warning restore CS0618
 
         Assert.Equal(primary.Value!.Count, legacy.Value!.Count);
         Assert.Equal(primary.Value![0].ID, legacy.Value![0].ID);
@@ -51,7 +53,9 @@ public class RelocationControllerTests
         relocationService.Setup(service => service.GetStoredPipe(pipeId)).Returns(pipeInfo);
 
         var primary = controller.GetRelocationPipeMetadataByPipeID(pipeId);
+#pragma warning disable CS0618
         var legacy = controller.GetRelocationPipeByPipeID(pipeId);
+#pragma warning restore CS0618
 
         Assert.Equal(((ApiRelocationPipe)primary.Value!).ID, ((ApiRelocationPipe)legacy.Value!).ID);
     }
@@ -65,7 +69,9 @@ public class RelocationControllerTests
         relocationService.Setup(service => service.GetStoredPipe(pipeId)).Returns(pipeInfo);
 
         var primary = controller.GetConfigurationForRelocationPipeByPipeID(pipeId);
+#pragma warning disable CS0618
         var legacy = controller.GetConfigurationForRelocationPipeByPipeIDLegacy(pipeId);
+#pragma warning restore CS0618
 
         var primaryContent = Assert.IsType<ContentResult>(primary);
         var legacyContent = Assert.IsType<ContentResult>(legacy);
@@ -95,9 +101,11 @@ public class RelocationControllerTests
         relocationService.Setup(service => service.GetStoredPipe(pipeId)).Returns(pipeInfo);
 
         var putPrimary = controller.PutConfigurationForRelocationPipeByPipeID(pipeId, Newtonsoft.Json.Linq.JObject.Parse("{\"Name\":\"Updated\"}"));
+#pragma warning disable CS0618
         var putLegacy = controller.PutConfigurationForRelocationPipeByPipeIDLegacy(pipeId, Newtonsoft.Json.Linq.JObject.Parse("{\"Name\":\"Updated\"}"));
         var patchPrimary = controller.PatchConfigurationForRelocationPipeByPipeID(pipeId, CreateNamePatch());
         var patchLegacy = controller.PatchConfigurationForRelocationPipeByPipeIDLegacy(pipeId, CreateNamePatch());
+#pragma warning restore CS0618
 
         Assert.IsType<OkResult>(putPrimary);
         Assert.IsType<OkResult>(putLegacy);
