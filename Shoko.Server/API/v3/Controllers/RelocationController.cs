@@ -42,9 +42,9 @@ namespace Shoko.Server.API.v3.Controllers;
 /// <param name="configurationService">
 ///   Configuration Service.
 /// </param>
-    /// <param name="relocationService">
-    ///   Relocation service.
-    /// </param>
+/// <param name="relocationService">
+///   Relocation service.
+/// </param>
 /// <param name="relocationApiCoordinator">
 ///   Relocation API coordinator.
 /// </param>

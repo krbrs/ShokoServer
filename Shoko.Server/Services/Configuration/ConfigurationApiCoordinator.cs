@@ -24,7 +24,7 @@ namespace Shoko.Server.Services.Configuration;
 
 public class ConfigurationApiCoordinator(IConfigurationService configurationService, IPluginManager pluginManager)
 {
-    public List<ConfigurationInfo> GetConfigurations(ConfigurationDiscoveryFilter filter)
+    public List<ConfigurationMetadata> GetConfigurations(ConfigurationDiscoveryFilter filter)
     {
         var enumerable = filter.PluginID.HasValue
             ? pluginManager.GetPluginInfo(filter.PluginID.Value) is { IsActive: true } pluginInfo
@@ -102,7 +102,7 @@ public class ConfigurationApiCoordinator(IConfigurationService configurationServ
 
                 return true;
             })
-            .Select(configurationInfo => new ConfigurationInfo(configurationInfo))
+            .Select(configurationInfo => new ConfigurationMetadata(configurationInfo))
             .ToList();
     }
 
@@ -282,8 +282,8 @@ public class ConfigurationApiCoordinator(IConfigurationService configurationServ
         }
     }
 
-    public ConfigurationInfo? GetConfigurationInfo(Guid id)
-        => configurationService.GetConfigurationInfo(id) is { } configInfo ? new(configInfo) : null;
+    public ConfigurationMetadata? GetConfigurationInfo(Guid id)
+        => configurationService.GetConfigurationInfo(id) is { } configInfo ? new ConfigurationMetadata(configInfo) : null;
 
     public string GetSchema(Guid id)
     {

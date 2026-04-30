@@ -45,11 +45,11 @@ public class ConfigurationController(ISettingsProvider settingsProvider, Configu
     /// </summary>
     /// <param name="filter">A compact set of filters used to discover configurations.</param>
     /// <returns>
-    ///   A list of <see cref="ConfigurationInfo"/> for the configurations
+    ///   A list of <see cref="ConfigurationMetadata"/> for the configurations
     ///   matching the query.
     /// </returns>
     [HttpGet]
-    public ActionResult<List<ConfigurationInfo>> GetConfigurations([FromQuery] ConfigurationDiscoveryFilter filter)
+    public ActionResult<List<ConfigurationMetadata>> GetConfigurations([FromQuery] ConfigurationDiscoveryFilter filter)
         => configurationApiCoordinator.GetConfigurations(filter);
 
     /// <summary>
@@ -108,12 +108,12 @@ public class ConfigurationController(ISettingsProvider settingsProvider, Configu
     /// <param name="id">Configuration id</param>
     /// <returns></returns>
     [HttpGet("{id:guid}/Metadata")]
-    public ActionResult<ConfigurationInfo> GetConfigurationMetadata(Guid id)
+    public ActionResult<ConfigurationMetadata> GetConfigurationMetadata(Guid id)
         => configurationApiCoordinator.GetConfigurationInfo(id) is { } configInfo ? configInfo : NotFound($"Configuration '{id}' not found!");
 
     [HttpGet("{id:guid}/Info")]
     [Obsolete("Use GET /api/v3/Configuration/{id}/Metadata instead.")]
-    public ActionResult<ConfigurationInfo> GetConfigurationInfo(Guid id)
+    public ActionResult<ConfigurationMetadata> GetConfigurationInfo(Guid id)
         => GetConfigurationMetadata(id);
 
     /// <summary>

@@ -62,7 +62,7 @@ public class RelocationProvider(RelocationProviderInfo info)
     /// <summary>
     ///   Information about the configuration the release info provider uses.
     /// </summary>
-    public ConfigurationInfo? Configuration { get; init; } = info.ConfigurationInfo is null ? null : new(info.ConfigurationInfo);
+    public ConfigurationMetadata? Configuration { get; init; } = info.ConfigurationInfo is null ? null : new(info.ConfigurationInfo);
 
     /// <summary>
     ///   Information about the plugin that the release info provider belongs to.

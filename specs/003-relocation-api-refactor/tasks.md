@@ -24,9 +24,9 @@
 
 ## Task 3: Refine relocation metadata and pipe models
 
-- [ ] Review `RelocationProvider`, `RelocationPipe`, and `RelocationSummary` to separate discovery metadata from editable pipe configuration.
-- [ ] Update the metadata shape so WebUI callers can discover IDs and capabilities without mixing in pipe-edit semantics.
-- [ ] Ensure the pipe configuration response shape stays focused on the editable configuration payload.
+- [X] Review `RelocationProvider`, `RelocationPipe`, and `RelocationSummary` to separate discovery metadata from editable pipe configuration.
+- [X] Update the metadata shape so WebUI callers can discover IDs and capabilities without mixing in pipe-edit semantics.
+- [X] Ensure the pipe configuration response shape stays focused on the editable configuration payload.
 
 **Depends on**: Task 2  
 **Outcome**: Clear distinction between discovery metadata and editable pipe content.
