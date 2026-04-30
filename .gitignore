@@ -177,3 +177,4 @@ UpgradeLog*.htm
 /Shoko.Server.VC.db
 
 .env
+.DS_Store
