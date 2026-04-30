@@ -105,9 +105,9 @@
 
 ## Task 12: Add controller and service tests for editing and relocation flows
 
-- [ ] Add tests for reading a pipe configuration by ID.
-- [ ] Add tests for full updates and partial updates.
-- [ ] Add tests for preview failures, batch relocation validation failures, unsupported operations, and unavailable providers.
+- [X] Add tests for reading a pipe configuration by ID.
+- [X] Add tests for full updates and partial updates.
+- [X] Add tests for preview failures, batch relocation validation failures, unsupported operations, and unavailable providers.
 - [ ] Add tests for compatibility routes if they remain enabled.
 
 **Depends on**: Task 7, Task 8, Task 9, Task 10  
