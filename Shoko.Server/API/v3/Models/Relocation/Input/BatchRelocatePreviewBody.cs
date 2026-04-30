@@ -28,4 +28,19 @@ public class BatchRelocatePreviewBody
     ///   The configuration to use if the provider requires one.
     /// </summary>
     public JObject? Configuration { get; set; }
+
+    /// <summary>
+    ///   Whether or not to move the files. If omitted, defaults to the relocation service setting.
+    /// </summary>
+    public bool? Move { get; set; }
+
+    /// <summary>
+    ///   Whether or not to rename the files. If omitted, defaults to the relocation service setting.
+    /// </summary>
+    public bool? Rename { get; set; }
+
+    /// <summary>
+    ///   Whether or not to allow relocation inside the destination. If omitted, defaults to the relocation service setting.
+    /// </summary>
+    public bool? AllowRelocationInsideDestination { get; set; }
 }

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,6 @@ using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Config.Exceptions;
 using Shoko.Abstractions.Config.Services;
 using Shoko.Abstractions.Extensions;
-using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Video.Relocation;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Abstractions.Web.Attributes;
@@ -22,6 +22,8 @@ using Shoko.Server.API.v3.Models.Relocation.Input;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Services;
 using Shoko.Server.Services.Configuration;
+using Shoko.Server.API.v3.Services;
+using Shoko.Server.Services.Relocation;
 using Shoko.Server.Settings;
 
 using ApiRelocationPipe = Shoko.Server.API.v3.Models.Relocation.RelocationPipe;
@@ -37,23 +39,25 @@ namespace Shoko.Server.API.v3.Controllers;
 /// <param name="settingsProvider">
 ///   Settings provider.
 /// </param>
-/// <param name="pluginManager">
-///   Plugin manager.
-/// </param>
 /// <param name="configurationService">
 ///   Configuration Service.
 /// </param>
-/// <param name="videoService">
-///   Video service.
-/// </param>
 /// <param name="relocationService">
 ///   Relocation service.
+/// </param>
+/// <param name="relocationApiCoordinator">
+///   Relocation API coordinator.
 /// </param>
 [ApiController]
 [Route("/api/v{version:apiVersion}/[controller]")]
 [ApiV3]
 [Authorize]
-public class RelocationController(ISettingsProvider settingsProvider, IPluginManager pluginManager, IConfigurationService configurationService, IVideoService videoService, IVideoRelocationService relocationService) : BaseController(settingsProvider)
+public class RelocationController(
+    ISettingsProvider settingsProvider,
+    IConfigurationService configurationService,
+    IVideoRelocationService relocationService,
+    RelocationApiCoordinator relocationApiCoordinator
+) : BaseController(settingsProvider)
 {
     #region Settings
 
@@ -112,17 +116,14 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// </returns>
     [DatabaseBlockedExempt]
     [InitFriendly]
+    [HttpGet("Providers")]
+    public ActionResult<List<RelocationProvider>> GetAvailableRelocationProviders([FromQuery] RelocationDiscoveryFilter filter)
+        => relocationApiCoordinator.GetAvailableProviders(filter);
+
     [HttpGet("Provider")]
-    public ActionResult<List<RelocationProvider>> GetAvailableRelocationProviders([FromQuery] Guid? pluginID = null)
-        => pluginID.HasValue
-            ? pluginManager.GetPluginInfo(pluginID.Value) is { IsActive: true } pluginInfo
-                ? relocationService.GetProviderInfo(pluginInfo.Plugin)
-                    .Select(providerInfo => new RelocationProvider(providerInfo))
-                    .ToList()
-                : []
-            : relocationService.GetAvailableProviders()
-                .Select(providerInfo => new RelocationProvider(providerInfo))
-                .ToList();
+    [Obsolete("Use GET /api/v3/Relocation/Providers instead.")]
+    public ActionResult<List<RelocationProvider>> GetAvailableRelocationProvidersLegacy([FromQuery] RelocationDiscoveryFilter filter)
+        => GetAvailableRelocationProviders(filter);
 
     /// <summary>
     ///   Gets a specific relocation provider by ID.
@@ -137,12 +138,7 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     [InitFriendly]
     [HttpGet("Provider/{providerID}")]
     public ActionResult<RelocationProvider> GetRelocationProviderByProviderID([FromRoute] Guid providerID)
-    {
-        if (relocationService.GetProviderInfo(providerID) is not { } value)
-            return NotFound("Renamer not found");
-
-        return new RelocationProvider(value);
-    }
+        => relocationApiCoordinator.GetProviderByID(providerID) is { } value ? value : NotFound("Renamer not found");
 
     #endregion
 
@@ -157,130 +153,26 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     ///   The body, with the file IDs and optionally the provider ID and
     ///   configuration to use.
     /// </param>
-    /// <param name="move">
-    ///   Whether or not to get the destination of the files. If <c>null</c>, to
-    ///   <see cref="RelocationSummary.MoveOnImport"/>.
-    /// </param>
-    /// <param name="rename">
-    ///   Whether or not to get the new name of the files. If <c>null</c>,
-    ///   defaults to <see cref="RelocationSummary.RenameOnImport"/>.
-    /// </param>
-    /// <param name="allowRelocationInsideDestination">
-    ///   Whether or not to allow relocation of files inside the destination. If
-    ///   <c>null</c>, defaults to <see cref="RelocationSummary.AllowRelocationInsideDestinationOnImport"/>.
-    /// </param>
     /// <returns>
     ///   A stream of relocate results.
     /// </returns>
     [Authorize("admin")]
     [HttpPost("Preview")]
     public ActionResult<IEnumerable<ApiRelocationResult>> BatchPreviewFilesWithProviderAndConfig(
-        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] BatchRelocatePreviewBody body,
-        bool? move = null,
-        bool? rename = null,
-        bool? allowRelocationInsideDestination = null
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] BatchRelocatePreviewBody body
     )
     {
-        IRelocationPipe pipe;
-        if (body is { ProviderID: null, Configuration: null or { Type: JTokenType.Null } })
-        {
-            if (relocationService.GetDefaultPipe() is not { ProviderInfo: { } } defaultPipe)
-                return ValidationProblem("Default RelocationPipe not available or otherwise unusable.", nameof(body.ProviderID));
+        var result = relocationApiCoordinator.PreviewFiles(body);
+        if (result.ValidationErrors is { Count: > 0 })
+            return ValidationProblem(result.ValidationErrors);
 
-            pipe = defaultPipe;
-        }
-        else
-        {
-            if (!body.ProviderID.HasValue)
-                return ValidationProblem("The ProviderID must be provided if a configuration object is provided.", nameof(body.ProviderID));
+        if (result.StatusCode is System.Net.HttpStatusCode.NotFound)
+            return NotFound(result.Message);
 
-            if (relocationService.GetProviderInfo(body.ProviderID.Value) is not { } providerInfo)
-                return ValidationProblem("The RelocationProvider with the given ID was not found.", nameof(body.ProviderID));
+        if (result.StatusCode is System.Net.HttpStatusCode.BadRequest)
+            return BadRequest(result.Message);
 
-            if (providerInfo.ConfigurationInfo is not null)
-            {
-                if (body.Configuration is null or { Type: JTokenType.Null })
-                    return ValidationProblem("The RelocationProvider expects a configuration object, and the provided configuration is not a valid JSON object.", nameof(body.Configuration));
-
-                var data = body.Configuration.ToJson();
-                var validationErrors = configurationService.Validate(providerInfo.ConfigurationInfo, data);
-                if (validationErrors.Count > 0)
-                    return ValidationProblem(validationErrors, nameof(body.Configuration));
-                pipe = new RelocationPipe(providerInfo.ID, Encoding.UTF8.GetBytes(data));
-            }
-            else
-            {
-                if (body.Configuration is not null and not { Type: JTokenType.Null })
-                    return ValidationProblem("The RelocationProvider does not expect a configuration object.", nameof(body.Configuration));
-                pipe = new RelocationPipe(providerInfo.ID, null);
-            }
-        }
-
-        return Ok(InternalBatchPreviewFiles(
-            body.FileIDs,
-            pipe,
-            move ?? relocationService.MoveOnImport,
-            rename ?? relocationService.RenameOnImport,
-            allowRelocationInsideDestination ?? relocationService.AllowRelocationInsideDestinationOnImport
-        ));
-    }
-
-    private IEnumerable<ApiRelocationResult> InternalBatchPreviewFiles(IEnumerable<int> fileLocationIDs, IRelocationPipe config, bool move, bool rename, bool allowRelocationInsideDestination)
-    {
-        foreach (var videoID in fileLocationIDs)
-        {
-            if (videoService.GetVideoByID(videoID) is not VideoLocal video)
-            {
-                yield return new ApiRelocationResult
-                {
-                    FileID = videoID,
-                    IsSuccess = false,
-                    IsPreview = true,
-                    ErrorMessage = $"Unable to find File with ID {videoID}",
-                };
-                continue;
-            }
-
-            var videoFile = video.FirstResolvedPlace;
-            if (videoFile is null)
-            {
-                videoFile = video.FirstValidPlace;
-                yield return new ApiRelocationResult
-                {
-                    FileID = videoID,
-                    IsSuccess = false,
-                    IsPreview = true,
-                    ErrorMessage = videoFile is not null
-                        ? $"Unable to find any resolvable File.Location for File with ID {videoID}. Found valid but non-resolvable File.Location \"{videoFile.Path}\" with ID {videoFile.ID}."
-                        : $"Unable to find any resolvable File.Location for File with ID {videoID}.",
-                };
-                continue;
-            }
-
-            RelocationResponse response;
-            try
-            {
-                response = ((VideoRelocationService)relocationService).ProcessPipe(videoFile, config, move, rename, allowRelocationInsideDestination, HttpContext.RequestAborted);
-            }
-            catch (Exception ex)
-            {
-                response = RelocationResponse.FromError($"An error occurred while trying to find a new file location: {ex.Message}", ex);
-            }
-
-            yield return new ApiRelocationResult
-            {
-                FileID = videoID,
-                FileLocationID = videoFile.ID,
-                IsSuccess = response.Success,
-                IsPreview = true,
-                IsRelocated = response.Moved || response.Renamed,
-                PipeName = config is StoredRelocationPipe stored ? stored.Name : null,
-                AbsolutePath = response.AbsolutePath,
-                ManagedFolderID = response.ManagedFolder?.ID,
-                RelativePath = response.RelativePath,
-                ErrorMessage = response.Error?.Message,
-            };
-        }
+        return Ok(result.Results ?? []);
     }
 
     #endregion
@@ -290,137 +182,29 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// <summary>
     ///   Run the default relocation pipe on a batch of files.
     /// </summary>
-    /// <param name="fileIDs">
-    ///   The body with the file IDs to use.
-    /// </param>
-    /// <param name="deleteEmptyDirectories">
-    ///   Whether or not to delete empty directories. Defaults to true.
-    /// </param>
-    /// <param name="move">
-    ///   Whether or not to get the destination of the files. If <c>null</c>, to
-    ///   <see cref="RelocationSummary.MoveOnImport"/>.
-    /// </param>
-    /// <param name="rename">
-    ///   Whether or not to get the new name of the files. If <c>null</c>,
-    ///   defaults to <see cref="RelocationSummary.RenameOnImport"/>.
-    /// </param>
-    /// <param name="allowRelocationInsideDestination">
-    ///   Whether or not to allow relocation of files inside the destination. If
-    ///   <c>null</c>, defaults to <see cref="RelocationSummary.AllowRelocationInsideDestinationOnImport"/>.
+    /// <param name="body">
+    ///   The body with the file IDs and relocation options to use.
     /// </param>
     /// <returns>
     ///   A stream of <see cref="ApiRelocationResult"/>s.
     /// </returns>
     [Authorize("admin")]
     [HttpPost("Relocate")]
-    public ActionResult<IAsyncEnumerable<ApiRelocationResult>> BatchRelocateFilesWithDefaultConfig(
-        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] IEnumerable<int> fileIDs,
-        [FromQuery] bool deleteEmptyDirectories = true,
-        [FromQuery] bool? move = null,
-        [FromQuery] bool? rename = null,
-        [FromQuery] bool? allowRelocationInsideDestination = null
+    public async Task<ActionResult<IEnumerable<ApiRelocationResult>>> BatchRelocateFilesWithDefaultConfig(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] BatchRelocateBody body
     )
     {
-        if (relocationService.GetDefaultPipe() is not { ProviderInfo: { } } pipe)
-            return ValidationProblem("Default RelocationPipe not available or otherwise unusable.");
+        var result = await relocationApiCoordinator.RelocateFiles(body);
+        if (result.ValidationErrors is { Count: > 0 })
+            return ValidationProblem(result.ValidationErrors);
 
-        return Ok(InternalBatchRelocateFiles(fileIDs, new AutoRelocateRequest
-        {
-            Pipe = pipe,
-            DeleteEmptyDirectories = deleteEmptyDirectories && (move ?? relocationService.MoveOnImport),
-            Move = move ?? relocationService.MoveOnImport,
-            Rename = rename ?? relocationService.RenameOnImport,
-            AllowRelocationInsideDestination = allowRelocationInsideDestination ?? relocationService.AllowRelocationInsideDestinationOnImport,
-        }));
-    }
+        if (result.StatusCode is System.Net.HttpStatusCode.NotFound)
+            return NotFound(result.Message);
 
-    private async IAsyncEnumerable<ApiRelocationResult> InternalBatchRelocateFiles(IEnumerable<int> fileIDs, AutoRelocateRequest request)
-    {
-        var configName = request.Pipe is IStoredRelocationPipe stored ? stored.Name : null;
-        foreach (var vlID in fileIDs)
-        {
-            if (videoService.GetVideoByID(vlID) is not VideoLocal vl)
-            {
-                yield return new ApiRelocationResult
-                {
-                    FileID = vlID,
-                    IsSuccess = false,
-                    PipeName = configName,
-                    ErrorMessage = $"Unable to find File with ID {vlID}",
-                };
-                continue;
-            }
+        if (result.StatusCode is System.Net.HttpStatusCode.BadRequest)
+            return BadRequest(result.Message);
 
-            var vlp = vl.FirstResolvedPlace;
-            if (vlp is null)
-            {
-                vlp = vl.FirstValidPlace;
-                yield return new ApiRelocationResult
-                {
-                    FileID = vlID,
-                    PipeName = configName,
-                    IsSuccess = false,
-                    ErrorMessage = vlp is not null
-                        ? $"Unable to find any resolvable File.Location for File with ID {vlID}. Found valid but non-resolvable File.Location \"{vlp.Path}\" with ID {vlp.ID}."
-                        : $"Unable to find any resolvable File.Location for File with ID {vlID}.",
-                };
-                continue;
-            }
-
-            // Store the old managed folder id and relative path for comparison.
-            var oldFolderId = vlp.ManagedFolderID;
-            var oldRelativePath = vlp.RelativePath;
-            var result = await relocationService.AutoRelocateFile(vlp, request);
-            if (!result.Success)
-            {
-                yield return new ApiRelocationResult
-                {
-                    FileID = vlp.VideoID,
-                    FileLocationID = vlp.ID,
-                    PipeName = configName,
-                    IsSuccess = false,
-                    ErrorMessage = result.Error.Message,
-                };
-                continue;
-            }
-
-            RelocationResponse? otherResult = null;
-            foreach (var otherVlp in vl.Places.Where(p => !string.IsNullOrEmpty(p?.Path) && System.IO.File.Exists(p.Path)))
-            {
-                if (otherVlp.ID == vlp.ID)
-                    continue;
-
-                otherResult = await relocationService.AutoRelocateFile(otherVlp, request);
-                if (!otherResult.Success)
-                    break;
-            }
-            if (otherResult is not null && !otherResult.Success)
-            {
-                yield return new ApiRelocationResult
-                {
-                    FileID = vlp.VideoID,
-                    FileLocationID = vlp.ID,
-                    PipeName = configName,
-                    IsSuccess = false,
-                    ErrorMessage = otherResult.Error.Message,
-                };
-                continue;
-            }
-
-            // Check if it was actually relocated, or if we landed on the same location as earlier.
-            var relocated = !string.Equals(oldRelativePath, result.RelativePath, StringComparison.InvariantCultureIgnoreCase) || oldFolderId != result.ManagedFolder.ID;
-            yield return new ApiRelocationResult
-            {
-                FileID = vlp.VideoID,
-                FileLocationID = vlp.ID,
-                ManagedFolderID = result.ManagedFolder.ID,
-                PipeName = configName,
-                IsSuccess = true,
-                IsRelocated = relocated,
-                RelativePath = result.RelativePath,
-                AbsolutePath = result.AbsolutePath
-            };
-        }
+        return Ok(result.Results ?? []);
     }
 
     #endregion
@@ -500,14 +284,19 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// <returns>
     ///   The <see cref="ApiRelocationPipe"/>.
     /// </returns>
-    [HttpGet("Pipe/{pipeID}")]
-    public ActionResult<ApiRelocationPipe> GetRelocationPipeByPipeID([FromRoute] Guid pipeID)
+    [HttpGet("Pipe/{pipeID}/Metadata")]
+    public ActionResult<ApiRelocationPipe> GetRelocationPipeMetadataByPipeID([FromRoute] Guid pipeID)
     {
         if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
             return NotFound("Relocation pipe not found");
 
         return new ApiRelocationPipe(pipeInfo, pipeInfo.ProviderInfo);
     }
+
+    [HttpGet("Pipe/{pipeID}")]
+    [Obsolete("Use GET /api/v3/Relocation/Pipe/{pipeID}/Metadata instead.")]
+    public ActionResult<ApiRelocationPipe> GetRelocationPipeByPipeID([FromRoute] Guid pipeID)
+        => GetRelocationPipeMetadataByPipeID(pipeID);
 
     /// <summary>
     ///   Modify the relocation pipe by the given pipe ID.
@@ -653,18 +442,7 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
         bool? rename = null,
         bool? allowRelocationInsideDestination = null
     )
-    {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
-
-        return Ok(InternalBatchPreviewFiles(
-            fileIDs,
-            pipeInfo,
-            move ?? relocationService.MoveOnImport,
-            rename ?? relocationService.RenameOnImport,
-            allowRelocationInsideDestination ?? relocationService.AllowRelocationInsideDestinationOnImport
-        ));
-    }
+        => ToBatchResult(relocationApiCoordinator.PreviewFiles(pipeID, fileIDs, move, rename, allowRelocationInsideDestination));
 
     #endregion
 
@@ -699,7 +477,7 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// </returns>
     [Authorize("admin")]
     [HttpPost("Pipe/{pipeID}/Relocate")]
-    public ActionResult<IAsyncEnumerable<ApiRelocationResult>> BatchRelocateFilesByConfig(
+    public async Task<ActionResult<IAsyncEnumerable<ApiRelocationResult>>> BatchRelocateFilesByConfig(
         [FromRoute] Guid pipeID,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] IEnumerable<int> fileIDs,
         [FromQuery] bool deleteEmptyDirectories = true,
@@ -707,21 +485,7 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
         [FromQuery] bool? rename = null,
         [FromQuery] bool? allowRelocationInsideDestination = null
     )
-    {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
-
-        return Ok(
-            InternalBatchRelocateFiles(fileIDs, new AutoRelocateRequest
-            {
-                Pipe = pipeInfo,
-                DeleteEmptyDirectories = deleteEmptyDirectories,
-                Move = move ?? relocationService.MoveOnImport,
-                Rename = rename ?? relocationService.RenameOnImport,
-                AllowRelocationInsideDestination = allowRelocationInsideDestination ?? relocationService.AllowRelocationInsideDestinationOnImport,
-            })
-        );
-    }
+        => ToBatchResult(await relocationApiCoordinator.RelocateFiles(pipeID, fileIDs, deleteEmptyDirectories, move, rename, allowRelocationInsideDestination));
 
     #endregion
 
@@ -738,34 +502,14 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     ///   The current configuration for the relocation pipe.
     /// </returns>
     [Produces("application/json")]
-    [HttpGet("Pipe/{pipeID}/Configuration")]
+    [HttpGet("Pipe/{pipeID}/Document")]
     public ActionResult GetConfigurationForRelocationPipeByPipeID(Guid pipeID)
-    {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
+        => ToDocumentResult(relocationApiCoordinator.GetPipeConfiguration(pipeID));
 
-        if (pipeInfo.ProviderInfo is not { } providerInfo)
-        {
-            if (pipeInfo.Configuration is null)
-                return NotFound("Relocation provider not found for relocation pipe.");
-
-            // Support showing the configuration in the REST API even if the provider is unavailable.
-            return Content(Encoding.UTF8.GetString(pipeInfo.Configuration!), "application/json");
-        }
-
-        if (providerInfo.ConfigurationInfo is null)
-            return NotFound("Relocation provider does not support configuration.");
-
-        try
-        {
-            var config = pipeInfo.LoadConfiguration();
-            return Content(configurationService.Serialize(config), "application/json");
-        }
-        catch (ConfigurationValidationException ex)
-        {
-            return ValidationProblem(ex.ValidationErrors);
-        }
-    }
+    [HttpGet("Pipe/{pipeID}/Configuration")]
+    [Obsolete("Use GET /api/v3/Relocation/Pipe/{pipeID}/Document instead.")]
+    public ActionResult GetConfigurationForRelocationPipeByPipeIDLegacy(Guid pipeID)
+        => GetConfigurationForRelocationPipeByPipeID(pipeID);
 
     /// <summary>
     ///   Overwrite the contents of the configuration for the relocation pipe
@@ -780,24 +524,17 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// <returns>
     ///   Ok if successful.
     /// </returns>
-    [HttpPut("Pipe/{pipeID}/Configuration")]
+    [HttpPut("Pipe/{pipeID}/Document")]
     public ActionResult PutConfigurationForRelocationPipeByPipeID(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] JToken? body)
     {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
-
-        try
-        {
-            var json = body is null or { Type: JTokenType.Null } ? null : body.ToString(Newtonsoft.Json.Formatting.None, [new StringEnumConverter()]);
-            pipeInfo.SaveConfiguration(json);
-
-            return Ok();
-        }
-        catch (ConfigurationValidationException ex)
-        {
-            return ValidationProblem(ex.ValidationErrors);
-        }
+        var json = body is null or { Type: JTokenType.Null } ? null : body.ToString(Newtonsoft.Json.Formatting.None, [new StringEnumConverter()]);
+        return ToDocumentResult(relocationApiCoordinator.SavePipeConfiguration(pipeID, json));
     }
+
+    [HttpPut("Pipe/{pipeID}/Configuration")]
+    [Obsolete("Use PUT /api/v3/Relocation/Pipe/{pipeID}/Document instead.")]
+    public ActionResult PutConfigurationForRelocationPipeByPipeIDLegacy(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] JToken? body)
+        => PutConfigurationForRelocationPipeByPipeID(pipeID, body);
 
     /// <summary>
     ///   Patches the configuration for the relocation pipe with the given ID
@@ -812,28 +549,47 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// <returns>
     ///   Ok if successful.
     /// </returns>
-    [HttpPatch("Pipe/{pipeID}/Configuration")]
+    [HttpPatch("Pipe/{pipeID}/Document")]
     public ActionResult PatchConfigurationForRelocationPipeByPipeID(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] JsonPatchDocument patchDocument)
+        => ToDocumentResult(relocationApiCoordinator.PatchPipeConfiguration(pipeID, patchDocument));
+
+    [HttpPatch("Pipe/{pipeID}/Configuration")]
+    [Obsolete("Use PATCH /api/v3/Relocation/Pipe/{pipeID}/Document instead.")]
+    public ActionResult PatchConfigurationForRelocationPipeByPipeIDLegacy(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] JsonPatchDocument patchDocument)
+        => PatchConfigurationForRelocationPipeByPipeID(pipeID, patchDocument);
+
+    #endregion
+
+    #endregion
+
+    private ActionResult ToDocumentResult(RelocationPipeDocumentResult result)
     {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
+        if (result.ValidationErrors is { Count: > 0 })
+            return ValidationProblem(result.ValidationErrors);
 
-        try
+        return result.StatusCode switch
         {
-            var config = pipeInfo.LoadConfiguration();
-            patchDocument.ApplyTo(config);
-
-            pipeInfo.SaveConfiguration(config);
-
-            return Ok();
-        }
-        catch (ConfigurationValidationException ex)
-        {
-            return ValidationProblem(ex.ValidationErrors);
-        }
+            System.Net.HttpStatusCode.OK when result.Content is not null => Content(result.Content, result.ContentType),
+            System.Net.HttpStatusCode.NoContent => NoContent(),
+            System.Net.HttpStatusCode.NotFound => NotFound(result.Message),
+            System.Net.HttpStatusCode.Conflict => Conflict(result.Message),
+            _ when result.Content is not null => Content(result.Content, result.ContentType),
+            _ when result.StatusCode is System.Net.HttpStatusCode.OK => Ok(),
+            _ => StatusCode((int)result.StatusCode, result.Message)
+        };
     }
 
-    #endregion
+    private ActionResult ToBatchResult(RelocationBatchResult result)
+    {
+        if (result.ValidationErrors is { Count: > 0 })
+            return ValidationProblem(result.ValidationErrors);
 
-    #endregion
+        return result.StatusCode switch
+        {
+            System.Net.HttpStatusCode.NotFound => NotFound(result.Message),
+            System.Net.HttpStatusCode.BadRequest => BadRequest(result.Message),
+            System.Net.HttpStatusCode.Conflict => Conflict(result.Message),
+            _ => Ok(result.Results ?? []),
+        };
+    }
 }

@@ -323,3 +323,9 @@ If no release provider returns a match, `ProcessFileJob` marks the file as unrec
 | `DownloadAniDBImageJob` | 8 (16) | Image download throughput |
 | `DownloadTmdbImageJob` | 12 (24) | Image download throughput |
 | `ValidateAllImagesJob` | 1 (1) | Sequential validation |
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read
+`specs/002-configuration-api-refactor/plan.md and `specs/003-relocation-api-refactor/plan.md`
+<!-- SPECKIT END -->

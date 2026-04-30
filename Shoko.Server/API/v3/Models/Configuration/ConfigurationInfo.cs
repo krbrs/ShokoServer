@@ -7,7 +7,7 @@ using AbstractConfigurationInfo = Shoko.Abstractions.Config.ConfigurationInfo;
 #nullable enable
 namespace Shoko.Server.API.v3.Models.Configuration;
 
-public class ConfigurationInfo(AbstractConfigurationInfo info)
+public class ConfigurationMetadata(AbstractConfigurationInfo info)
 {
     /// <summary>
     /// The ID of the configuration.
@@ -79,4 +79,12 @@ public class ConfigurationInfo(AbstractConfigurationInfo info)
     /// Information about the plugin that the configuration belongs to.
     /// </summary>
     public PluginInfo Plugin { get; init; } = new(info.PluginInfo);
+}
+
+/// <summary>
+/// Backward-compatible alias for <see cref="ConfigurationMetadata"/>.
+/// </summary>
+[Obsolete("Use ConfigurationMetadata instead.")]
+public class ConfigurationInfo(AbstractConfigurationInfo info) : ConfigurationMetadata(info)
+{
 }

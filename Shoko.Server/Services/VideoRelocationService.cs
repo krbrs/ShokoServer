@@ -629,6 +629,12 @@ public class VideoRelocationService(
         if (request.Preview || !result.Success)
             return (result, false);
 
+        if (string.Equals(result.AbsolutePath, place.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogTrace("Resolved path is unchanged for {PreviousPath}. Skipping relocation.", place.Path);
+            return (result, false);
+        }
+
         try
         {
             // Actually move it.
