@@ -152,7 +152,7 @@ public class ConfigurationApiCoordinatorTests
     [Fact]
     public void SaveDocument_ReturnsValidationFailure_WithoutSaving()
     {
-        var info = CreateConfigurationInfo<VisibleConfig>(Guid.NewGuid(), "Save", "Save plugin");
+        var info = CreateConfigurationInfo<VisibleConfig>(Guid.NewGuid(), "Save", "Save plugin", hasCustomSave: true);
         var configurationService = new Mock<IConfigurationService>();
         configurationService.Setup(service => service.GetConfigurationInfo(info.ID)).Returns(info);
         configurationService.Setup(service => service.Validate(info, "{\"name\":\"broken\"}"))
@@ -167,10 +167,14 @@ public class ConfigurationApiCoordinatorTests
         configurationService.Verify(service => service.Save(It.IsAny<Shoko.Abstractions.Config.ConfigurationInfo>(), It.IsAny<string>()), Times.Never);
     }
 
-    private static Shoko.Abstractions.Config.ConfigurationInfo CreateConfigurationInfo<TConfig>(Guid id, string name, string pluginName, bool hasCustomLoad = false) where TConfig : class, IConfiguration, new()
+    private static Shoko.Abstractions.Config.ConfigurationInfo CreateConfigurationInfo<TConfig>(Guid id, string name, string pluginName, bool hasCustomLoad = false, bool hasCustomSave = false) where TConfig : class, IConfiguration, new()
     {
+        var configurationService = new Mock<IConfigurationService>();
+        configurationService.SetupGet(service => service.RestartPendingFor).Returns(new Dictionary<Guid, IReadOnlySet<string>>());
+        configurationService.SetupGet(service => service.LoadedEnvironmentVariables).Returns(new Dictionary<Guid, IReadOnlySet<string>>());
+
         var pluginInfo = CreatePluginInfo(Guid.NewGuid(), null, pluginName, isActive: false);
-        return new(new Mock<IConfigurationService>().Object)
+        return new(configurationService.Object)
         {
             ID = id,
             Path = null,
@@ -179,7 +183,7 @@ public class ConfigurationApiCoordinatorTests
             HasCustomActions = false,
             HasCustomNewFactory = false,
             HasCustomValidation = false,
-            HasCustomSave = false,
+            HasCustomSave = hasCustomSave,
             HasCustomLoad = hasCustomLoad,
             HasLiveEdit = false,
             Type = typeof(TConfig),

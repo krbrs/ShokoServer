@@ -80,31 +80,16 @@ public class RelocationApiCoordinatorTests
     [Fact]
     public void GetPipeConfiguration_ReturnsStoredRawConfiguration_WhenProviderIsUnavailable()
     {
-        var pipeId = Guid.NewGuid();
         var providerId = Guid.NewGuid();
-        var pipeService = new Mock<IVideoRelocationService>();
-        pipeService.Setup(service => service.GetProviderInfo(providerId)).Returns((RelocationProviderInfo?)null);
-
-        var storedPipe = new Shoko.Server.Models.Shoko.StoredRelocationPipe
-        {
-            StoredRelocationPipeID = 1,
-            ProviderID = providerId,
-            Name = "Stored pipe",
-            Configuration = Encoding.UTF8.GetBytes("{\"name\":\"pipe\"}"),
-        };
-        var pipeInfo = new Shoko.Abstractions.Video.Relocation.RelocationPipeInfo(
-            pipeService.Object,
-            new Mock<IConfigurationService>().Object,
-            storedPipe
-        );
 
         var relocationService = new Mock<IVideoRelocationService>();
-        relocationService.Setup(service => service.GetStoredPipe(pipeInfo.ID)).Returns(pipeInfo);
         relocationService.Setup(service => service.GetProviderInfo(providerId)).Returns((RelocationProviderInfo?)null);
+        var pipeInfo = new RelocationPipeInfo(relocationService.Object, new Mock<IConfigurationService>().Object, new FakeStoredPipe(providerId, "Stored pipe", "{\"name\":\"pipe\"}"));
+        relocationService.Setup(service => service.GetStoredPipe(It.IsAny<Guid>())).Returns(pipeInfo);
 
         var coordinator = new RelocationApiCoordinator(new Mock<IPluginManager>().Object, new Mock<IConfigurationService>().Object, new Mock<IVideoService>().Object, relocationService.Object);
 
-        var result = coordinator.GetPipeConfiguration(pipeInfo.ID);
+        var result = coordinator.GetPipeConfiguration(Guid.NewGuid());
 
         Assert.Equal(System.Net.HttpStatusCode.OK, result.StatusCode);
         Assert.Equal("{\"name\":\"pipe\"}", result.Content);
@@ -166,5 +151,18 @@ public class RelocationApiCoordinatorTests
         public Guid ID { get; } = id;
 
         public string Name { get; } = name;
+    }
+
+    private sealed class FakeStoredPipe(Guid providerId, string name, string configuration) : IStoredRelocationPipe
+    {
+        public Guid ID { get; } = Guid.NewGuid();
+
+        public string Name { get; } = name;
+
+        public bool IsDefault { get; } = false;
+
+        public Guid ProviderID { get; } = providerId;
+
+        public byte[]? Configuration { get; } = Encoding.UTF8.GetBytes(configuration);
     }
 }
