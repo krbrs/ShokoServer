@@ -127,7 +127,7 @@
 
 - [X] Run the relevant test suite for configuration controller and configuration service coverage.
 - [X] Verify the new routes, aliases, and response semantics behave as intended.
-- [ ] Confirm the WebUI can still discover, read, and update configurations during the transition period.
+- [X] Confirm the WebUI can still discover, read, and update configurations during the transition period.
 
 **Depends on**: Task 11, Task 12, Task 13
 **Outcome**: Refactor is verified before rollout.
