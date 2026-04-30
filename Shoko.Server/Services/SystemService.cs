@@ -394,6 +394,7 @@ public class SystemService : ISystemService
             services.AddSingleton<IVideoReleaseService, VideoReleaseService>();
             services.AddSingleton<IVideoHashingService, VideoHashingService>();
             services.AddSingleton<IVideoRelocationService, VideoRelocationService>();
+            services.AddSingleton<ConfigurationApiCoordinator>();
             services.AddSingleton(typeof(ConfigurationProvider<>));
             services.AddSingleton<IUserService, UserService>();
             services.AddSingleton<IUserDataService, UserDataService>();
