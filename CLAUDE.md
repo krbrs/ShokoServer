@@ -327,5 +327,5 @@ If no release provider returns a match, `ProcessFileJob` marks the file as unrec
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read
-`specs/001-database-client-migration/plan.md`
+`specs/002-configuration-api-refactor/plan.md and `specs/003-relocation-api-refactor/plan.md`
 <!-- SPECKIT END -->
