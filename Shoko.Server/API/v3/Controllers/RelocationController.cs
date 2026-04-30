@@ -12,7 +12,6 @@ using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Config.Exceptions;
 using Shoko.Abstractions.Config.Services;
 using Shoko.Abstractions.Extensions;
-using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Video.Relocation;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Abstractions.Web.Attributes;
@@ -22,6 +21,7 @@ using Shoko.Server.API.v3.Models.Relocation.Input;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Services;
 using Shoko.Server.Services.Configuration;
+using Shoko.Server.Services.Relocation;
 using Shoko.Server.Settings;
 
 using ApiRelocationPipe = Shoko.Server.API.v3.Models.Relocation.RelocationPipe;
@@ -37,9 +37,6 @@ namespace Shoko.Server.API.v3.Controllers;
 /// <param name="settingsProvider">
 ///   Settings provider.
 /// </param>
-/// <param name="pluginManager">
-///   Plugin manager.
-/// </param>
 /// <param name="configurationService">
 ///   Configuration Service.
 /// </param>
@@ -49,11 +46,20 @@ namespace Shoko.Server.API.v3.Controllers;
 /// <param name="relocationService">
 ///   Relocation service.
 /// </param>
+/// <param name="relocationApiCoordinator">
+///   Relocation API coordinator.
+/// </param>
 [ApiController]
 [Route("/api/v{version:apiVersion}/[controller]")]
 [ApiV3]
 [Authorize]
-public class RelocationController(ISettingsProvider settingsProvider, IPluginManager pluginManager, IConfigurationService configurationService, IVideoService videoService, IVideoRelocationService relocationService) : BaseController(settingsProvider)
+public class RelocationController(
+    ISettingsProvider settingsProvider,
+    IConfigurationService configurationService,
+    IVideoService videoService,
+    IVideoRelocationService relocationService,
+    RelocationApiCoordinator relocationApiCoordinator
+) : BaseController(settingsProvider)
 {
     #region Settings
 
@@ -112,17 +118,14 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// </returns>
     [DatabaseBlockedExempt]
     [InitFriendly]
+    [HttpGet("Providers")]
+    public ActionResult<List<RelocationProvider>> GetAvailableRelocationProviders([FromQuery] RelocationDiscoveryFilter filter)
+        => relocationApiCoordinator.GetAvailableProviders(filter);
+
     [HttpGet("Provider")]
-    public ActionResult<List<RelocationProvider>> GetAvailableRelocationProviders([FromQuery] Guid? pluginID = null)
-        => pluginID.HasValue
-            ? pluginManager.GetPluginInfo(pluginID.Value) is { IsActive: true } pluginInfo
-                ? relocationService.GetProviderInfo(pluginInfo.Plugin)
-                    .Select(providerInfo => new RelocationProvider(providerInfo))
-                    .ToList()
-                : []
-            : relocationService.GetAvailableProviders()
-                .Select(providerInfo => new RelocationProvider(providerInfo))
-                .ToList();
+    [Obsolete("Use GET /api/v3/Relocation/Providers instead.")]
+    public ActionResult<List<RelocationProvider>> GetAvailableRelocationProvidersLegacy([FromQuery] RelocationDiscoveryFilter filter)
+        => GetAvailableRelocationProviders(filter);
 
     /// <summary>
     ///   Gets a specific relocation provider by ID.
@@ -137,12 +140,7 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     [InitFriendly]
     [HttpGet("Provider/{providerID}")]
     public ActionResult<RelocationProvider> GetRelocationProviderByProviderID([FromRoute] Guid providerID)
-    {
-        if (relocationService.GetProviderInfo(providerID) is not { } value)
-            return NotFound("Renamer not found");
-
-        return new RelocationProvider(value);
-    }
+        => relocationApiCoordinator.GetProviderByID(providerID) is { } value ? value : NotFound("Renamer not found");
 
     #endregion
 
@@ -500,14 +498,19 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// <returns>
     ///   The <see cref="ApiRelocationPipe"/>.
     /// </returns>
-    [HttpGet("Pipe/{pipeID}")]
-    public ActionResult<ApiRelocationPipe> GetRelocationPipeByPipeID([FromRoute] Guid pipeID)
+    [HttpGet("Pipe/{pipeID}/Metadata")]
+    public ActionResult<ApiRelocationPipe> GetRelocationPipeMetadataByPipeID([FromRoute] Guid pipeID)
     {
         if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
             return NotFound("Relocation pipe not found");
 
         return new ApiRelocationPipe(pipeInfo, pipeInfo.ProviderInfo);
     }
+
+    [HttpGet("Pipe/{pipeID}")]
+    [Obsolete("Use GET /api/v3/Relocation/Pipe/{pipeID}/Metadata instead.")]
+    public ActionResult<ApiRelocationPipe> GetRelocationPipeByPipeID([FromRoute] Guid pipeID)
+        => GetRelocationPipeMetadataByPipeID(pipeID);
 
     /// <summary>
     ///   Modify the relocation pipe by the given pipe ID.
@@ -738,34 +741,14 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     ///   The current configuration for the relocation pipe.
     /// </returns>
     [Produces("application/json")]
-    [HttpGet("Pipe/{pipeID}/Configuration")]
+    [HttpGet("Pipe/{pipeID}/Document")]
     public ActionResult GetConfigurationForRelocationPipeByPipeID(Guid pipeID)
-    {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
+        => ToDocumentResult(relocationApiCoordinator.GetPipeConfiguration(pipeID));
 
-        if (pipeInfo.ProviderInfo is not { } providerInfo)
-        {
-            if (pipeInfo.Configuration is null)
-                return NotFound("Relocation provider not found for relocation pipe.");
-
-            // Support showing the configuration in the REST API even if the provider is unavailable.
-            return Content(Encoding.UTF8.GetString(pipeInfo.Configuration!), "application/json");
-        }
-
-        if (providerInfo.ConfigurationInfo is null)
-            return NotFound("Relocation provider does not support configuration.");
-
-        try
-        {
-            var config = pipeInfo.LoadConfiguration();
-            return Content(configurationService.Serialize(config), "application/json");
-        }
-        catch (ConfigurationValidationException ex)
-        {
-            return ValidationProblem(ex.ValidationErrors);
-        }
-    }
+    [HttpGet("Pipe/{pipeID}/Configuration")]
+    [Obsolete("Use GET /api/v3/Relocation/Pipe/{pipeID}/Document instead.")]
+    public ActionResult GetConfigurationForRelocationPipeByPipeIDLegacy(Guid pipeID)
+        => GetConfigurationForRelocationPipeByPipeID(pipeID);
 
     /// <summary>
     ///   Overwrite the contents of the configuration for the relocation pipe
@@ -780,24 +763,17 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// <returns>
     ///   Ok if successful.
     /// </returns>
-    [HttpPut("Pipe/{pipeID}/Configuration")]
+    [HttpPut("Pipe/{pipeID}/Document")]
     public ActionResult PutConfigurationForRelocationPipeByPipeID(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] JToken? body)
     {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
-
-        try
-        {
-            var json = body is null or { Type: JTokenType.Null } ? null : body.ToString(Newtonsoft.Json.Formatting.None, [new StringEnumConverter()]);
-            pipeInfo.SaveConfiguration(json);
-
-            return Ok();
-        }
-        catch (ConfigurationValidationException ex)
-        {
-            return ValidationProblem(ex.ValidationErrors);
-        }
+        var json = body is null or { Type: JTokenType.Null } ? null : body.ToString(Newtonsoft.Json.Formatting.None, [new StringEnumConverter()]);
+        return ToDocumentResult(relocationApiCoordinator.SavePipeConfiguration(pipeID, json));
     }
+
+    [HttpPut("Pipe/{pipeID}/Configuration")]
+    [Obsolete("Use PUT /api/v3/Relocation/Pipe/{pipeID}/Document instead.")]
+    public ActionResult PutConfigurationForRelocationPipeByPipeIDLegacy(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] JToken? body)
+        => PutConfigurationForRelocationPipeByPipeID(pipeID, body);
 
     /// <summary>
     ///   Patches the configuration for the relocation pipe with the given ID
@@ -812,28 +788,33 @@ public class RelocationController(ISettingsProvider settingsProvider, IPluginMan
     /// <returns>
     ///   Ok if successful.
     /// </returns>
-    [HttpPatch("Pipe/{pipeID}/Configuration")]
+    [HttpPatch("Pipe/{pipeID}/Document")]
     public ActionResult PatchConfigurationForRelocationPipeByPipeID(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] JsonPatchDocument patchDocument)
+        => ToDocumentResult(relocationApiCoordinator.PatchPipeConfiguration(pipeID, patchDocument));
+
+    [HttpPatch("Pipe/{pipeID}/Configuration")]
+    [Obsolete("Use PATCH /api/v3/Relocation/Pipe/{pipeID}/Document instead.")]
+    public ActionResult PatchConfigurationForRelocationPipeByPipeIDLegacy(Guid pipeID, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Disallow)] JsonPatchDocument patchDocument)
+        => PatchConfigurationForRelocationPipeByPipeID(pipeID, patchDocument);
+
+    #endregion
+
+    #endregion
+
+    private ActionResult ToDocumentResult(RelocationPipeDocumentResult result)
     {
-        if (relocationService.GetStoredPipe(pipeID) is not { } pipeInfo)
-            return NotFound("Relocation pipe not found");
+        if (result.ValidationErrors is { Count: > 0 })
+            return ValidationProblem(result.ValidationErrors);
 
-        try
+        return result.StatusCode switch
         {
-            var config = pipeInfo.LoadConfiguration();
-            patchDocument.ApplyTo(config);
-
-            pipeInfo.SaveConfiguration(config);
-
-            return Ok();
-        }
-        catch (ConfigurationValidationException ex)
-        {
-            return ValidationProblem(ex.ValidationErrors);
-        }
+            System.Net.HttpStatusCode.OK when result.Content is not null => Content(result.Content, result.ContentType),
+            System.Net.HttpStatusCode.NoContent => NoContent(),
+            System.Net.HttpStatusCode.NotFound => NotFound(result.Message),
+            System.Net.HttpStatusCode.Conflict => Conflict(result.Message),
+            _ when result.Content is not null => Content(result.Content, result.ContentType),
+            _ when result.StatusCode is System.Net.HttpStatusCode.OK => Ok(),
+            _ => StatusCode((int)result.StatusCode, result.Message)
+        };
     }
-
-    #endregion
-
-    #endregion
 }

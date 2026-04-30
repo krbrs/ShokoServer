@@ -6,9 +6,9 @@
 
 ## Task 1: Inventory the current relocation surface
 
-- [ ] Review the existing `RelocationController` routes, response types, and compatibility-sensitive behaviors.
-- [ ] Identify every route that will remain public, be renamed, or be kept only as a compatibility alias.
-- [ ] Identify every controller behavior that currently depends on provider availability, pipe state, or configuration schema support.
+- [X] Review the existing `RelocationController` routes, response types, and compatibility-sensitive behaviors.
+- [X] Identify every route that will remain public, be renamed, or be kept only as a compatibility alias.
+- [X] Identify every controller behavior that currently depends on provider availability, pipe state, or configuration schema support.
 
 **Depends on**: None  
 **Outcome**: Clear migration map for the refactor.
@@ -42,18 +42,18 @@
 
 ## Task 5: Refactor provider and pipe discovery endpoints
 
-- [ ] Simplify the provider and pipe discovery endpoints so the public contract clearly separates provider metadata from stored pipe metadata.
-- [ ] Keep discovery results stable and continue returning IDs and identifying metadata.
-- [ ] Preserve plugin scoping and availability behavior while simplifying the call site.
+- [X] Simplify the provider and pipe discovery endpoints so the public contract clearly separates provider metadata from stored pipe metadata.
+- [X] Keep discovery results stable and continue returning IDs and identifying metadata.
+- [X] Preserve plugin scoping and availability behavior while simplifying the call site.
 
 **Depends on**: Task 2, Task 3  
 **Outcome**: Easier-to-read discovery routes.
 
 ## Task 6: Split pipe metadata access from pipe configuration access
 
-- [ ] Keep a dedicated metadata route for a single relocation pipe.
-- [ ] Make the main pipe read route return the editable configuration in a clear, predictable way.
-- [ ] Keep the schema-aligned behavior tied to the same pipe ID and configuration flow.
+- [X] Keep a dedicated metadata route for a single relocation pipe.
+- [X] Make the main pipe read route return the editable configuration in a clear, predictable way.
+- [X] Keep the schema-aligned behavior tied to the same pipe ID and configuration flow.
 
 **Depends on**: Task 3, Task 4  
 **Outcome**: Clear separation between metadata and editable configuration.

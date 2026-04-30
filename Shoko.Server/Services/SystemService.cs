@@ -51,6 +51,7 @@ using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.Actions;
 using Shoko.Server.Services.Abstraction;
 using Shoko.Server.Services.Configuration;
+using Shoko.Server.Services.Relocation;
 using Shoko.Server.Services.Connectivity;
 using Shoko.Server.Services.ErrorHandling;
 using Shoko.Server.Settings;
@@ -394,6 +395,7 @@ public class SystemService : ISystemService
             services.AddSingleton<IVideoReleaseService, VideoReleaseService>();
             services.AddSingleton<IVideoHashingService, VideoHashingService>();
             services.AddSingleton<IVideoRelocationService, VideoRelocationService>();
+            services.AddSingleton<RelocationApiCoordinator>();
             services.AddSingleton<ConfigurationApiCoordinator>();
             services.AddSingleton(typeof(ConfigurationProvider<>));
             services.AddSingleton<IUserService, UserService>();
