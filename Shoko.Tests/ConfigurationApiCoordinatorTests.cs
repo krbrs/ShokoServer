@@ -84,6 +84,24 @@ public class ConfigurationApiCoordinatorTests
     }
 
     [Fact]
+    public void GetConfigurationInfo_ReturnsMetadataWithoutDocumentPayload()
+    {
+        var info = CreateConfigurationInfo<VisibleConfig>(Guid.NewGuid(), "Metadata", "Metadata plugin", hasCustomLoad: true);
+        var configurationService = new Mock<IConfigurationService>();
+        configurationService.Setup(service => service.GetConfigurationInfo(info.ID)).Returns(info);
+
+        var coordinator = new ConfigurationApiCoordinator(configurationService.Object, new Mock<IPluginManager>().Object);
+
+        var result = coordinator.GetConfigurationInfo(info.ID);
+
+        Assert.NotNull(result);
+        Assert.Equal(info.ID, result!.ID);
+        Assert.Equal("Metadata", result.Name);
+        Assert.True(result.HasCustomLoad);
+        Assert.Equal(info.PluginInfo.ID, result.Plugin.ID);
+    }
+
+    [Fact]
     public void LoadDocument_UsesCustomLoadFlow_WhenConfigurationSupportsIt()
     {
         var info = CreateConfigurationInfo<VisibleConfig>(Guid.NewGuid(), "Custom Load", "Custom Load plugin", hasCustomLoad: true);
@@ -114,6 +132,21 @@ public class ConfigurationApiCoordinatorTests
 
         Assert.Equal(System.Net.HttpStatusCode.NotFound, result.StatusCode);
         Assert.Contains("not found", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GetSchema_ReturnsSchemaForKnownConfiguration()
+    {
+        var info = CreateConfigurationInfo<VisibleConfig>(Guid.NewGuid(), "Schema", "Schema plugin");
+        var configurationService = new Mock<IConfigurationService>();
+        configurationService.Setup(service => service.GetConfigurationInfo(info.ID)).Returns(info);
+        configurationService.Setup(service => service.GetSchema(info)).Returns("{\"type\":\"object\"}");
+
+        var coordinator = new ConfigurationApiCoordinator(configurationService.Object, new Mock<IPluginManager>().Object);
+
+        var result = coordinator.GetSchema(info.ID);
+
+        Assert.Equal("{\"type\":\"object\"}", result);
     }
 
     [Fact]

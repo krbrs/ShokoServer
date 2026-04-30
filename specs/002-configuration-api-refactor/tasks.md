@@ -24,9 +24,9 @@
 
 ## Task 3: Refine configuration metadata and document models
 
-- [ ] Review `ConfigurationInfo` and related response types to separate discovery metadata from editable document concerns.
-- [ ] Update the metadata shape so WebUI callers can discover IDs and capabilities without mixing in document-edit semantics.
-- [ ] Ensure the document response shape stays focused on the editable configuration payload.
+- [X] Review `ConfigurationInfo` and related response types to separate discovery metadata from editable document concerns.
+- [X] Update the metadata shape so WebUI callers can discover IDs and capabilities without mixing in document-edit semantics.
+- [X] Ensure the document response shape stays focused on the editable configuration payload.
 
 **Depends on**: Task 2
 **Outcome**: Clear distinction between discovery metadata and editable content.
@@ -97,28 +97,28 @@
 
 ## Task 11: Add controller and service tests for discovery and metadata
 
-- [ ] Add tests that the list endpoint returns IDs and identifying metadata with the new discovery filter shape.
-- [ ] Add tests that the metadata route remains distinct from the editable document route.
-- [ ] Add tests for empty lists, plugin-scoped discovery, and search behavior.
+- [X] Add tests that the list endpoint returns IDs and identifying metadata with the new discovery filter shape.
+- [X] Add tests that the metadata route remains distinct from the editable document route.
+- [X] Add tests for empty lists, plugin-scoped discovery, and search behavior.
 
 **Depends on**: Task 5, Task 6
 **Outcome**: Discovery and metadata behavior is covered.
 
 ## Task 12: Add controller and service tests for editing and actions
 
-- [ ] Add tests for reading a configuration document by ID.
-- [ ] Add tests for full updates and partial updates.
-- [ ] Add tests for validation failures, custom actions, live edit, and unsupported operations.
-- [ ] Add tests for compatibility routes if they remain enabled.
+- [X] Add tests for reading a configuration document by ID.
+- [X] Add tests for full updates and partial updates.
+- [X] Add tests for validation failures, custom actions, live edit, and unsupported operations.
+- [X] Add tests for compatibility routes if they remain enabled.
 
 **Depends on**: Task 7, Task 8, Task 9, Task 10
 **Outcome**: The full editing and action workflow is covered.
 
 ## Task 13: Update API-facing comments and route documentation
 
-- [ ] Update controller comments so each route describes the user-facing responsibility rather than the implementation detail.
-- [ ] Update any route summaries or response notes that still describe the old multiplexed behavior.
-- [ ] Verify the public API text matches the new discovery, metadata, document, and action split.
+- [X] Update controller comments so each route describes the user-facing responsibility rather than the implementation detail.
+- [X] Update any route summaries or response notes that still describe the old multiplexed behavior.
+- [X] Verify the public API text matches the new discovery, metadata, document, and action split.
 
 **Depends on**: Task 5, Task 6, Task 7, Task 8
 **Outcome**: Maintainers can understand the surface from the code and generated docs.

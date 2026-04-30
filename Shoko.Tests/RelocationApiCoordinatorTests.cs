@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using Namotion.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -56,6 +57,58 @@ public class RelocationApiCoordinatorTests
 
         Assert.Equal(System.Net.HttpStatusCode.NotFound, result.StatusCode);
         Assert.Contains("not found", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GetAvailableProviders_ReturnsEmpty_WhenPluginIsInactive()
+    {
+        var pluginId = Guid.NewGuid();
+
+        var pluginManager = new Mock<IPluginManager>();
+        pluginManager.Setup(manager => manager.GetPluginInfo(pluginId)).Returns(CreatePluginInfo(pluginId, null, "Inactive plugin", isActive: false));
+
+        var relocationService = new Mock<IVideoRelocationService>();
+        var coordinator = new RelocationApiCoordinator(pluginManager.Object, new Mock<IConfigurationService>().Object, new Mock<IVideoService>().Object, relocationService.Object);
+
+        var result = coordinator.GetAvailableProviders(new RelocationDiscoveryFilter() { PluginID = pluginId });
+
+        Assert.Empty(result);
+        relocationService.Verify(service => service.GetAvailableProviders(), Times.Never);
+        relocationService.Verify(service => service.GetProviderInfo(It.IsAny<IPlugin>()), Times.Never);
+    }
+
+    [Fact]
+    public void GetPipeConfiguration_ReturnsStoredRawConfiguration_WhenProviderIsUnavailable()
+    {
+        var pipeId = Guid.NewGuid();
+        var providerId = Guid.NewGuid();
+        var pipeService = new Mock<IVideoRelocationService>();
+        pipeService.Setup(service => service.GetProviderInfo(providerId)).Returns((RelocationProviderInfo?)null);
+
+        var storedPipe = new Shoko.Server.Models.Shoko.StoredRelocationPipe
+        {
+            StoredRelocationPipeID = 1,
+            ProviderID = providerId,
+            Name = "Stored pipe",
+            Configuration = Encoding.UTF8.GetBytes("{\"name\":\"pipe\"}"),
+        };
+        var pipeInfo = new Shoko.Abstractions.Video.Relocation.RelocationPipeInfo(
+            pipeService.Object,
+            new Mock<IConfigurationService>().Object,
+            storedPipe
+        );
+
+        var relocationService = new Mock<IVideoRelocationService>();
+        relocationService.Setup(service => service.GetStoredPipe(pipeInfo.ID)).Returns(pipeInfo);
+        relocationService.Setup(service => service.GetProviderInfo(providerId)).Returns((RelocationProviderInfo?)null);
+
+        var coordinator = new RelocationApiCoordinator(new Mock<IPluginManager>().Object, new Mock<IConfigurationService>().Object, new Mock<IVideoService>().Object, relocationService.Object);
+
+        var result = coordinator.GetPipeConfiguration(pipeInfo.ID);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, result.StatusCode);
+        Assert.Equal("{\"name\":\"pipe\"}", result.Content);
+        Assert.Equal("application/json", result.ContentType);
     }
 
     private static RelocationProviderInfo CreateProviderInfo(IPlugin plugin, string name)

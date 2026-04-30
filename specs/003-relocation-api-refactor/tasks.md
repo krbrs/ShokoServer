@@ -96,9 +96,9 @@
 
 ## Task 11: Add controller and service tests for discovery and metadata
 
-- [ ] Add tests that the provider and pipe list endpoints return IDs and identifying metadata with the new discovery filter shape.
-- [ ] Add tests that the metadata route remains distinct from the editable pipe configuration route.
-- [ ] Add tests for empty lists, plugin-scoped discovery, and availability behavior.
+- [X] Add tests that the provider and pipe list endpoints return IDs and identifying metadata with the new discovery filter shape.
+- [X] Add tests that the metadata route remains distinct from the editable pipe configuration route.
+- [X] Add tests for empty lists, plugin-scoped discovery, and availability behavior.
 
 **Depends on**: Task 5, Task 6  
 **Outcome**: Discovery and metadata behavior is covered.
@@ -115,9 +115,9 @@
 
 ## Task 13: Update API-facing comments and route documentation
 
-- [ ] Update controller comments so each route describes the user-facing responsibility rather than the implementation detail.
-- [ ] Update any route summaries or response notes that still describe the old multiplexed behavior.
-- [ ] Verify the public API text matches the new discovery, metadata, pipe configuration, preview, and relocation split.
+- [X] Update controller comments so each route describes the user-facing responsibility rather than the implementation detail.
+- [X] Update any route summaries or response notes that still describe the old multiplexed behavior.
+- [X] Verify the public API text matches the new discovery, metadata, pipe configuration, preview, and relocation split.
 
 **Depends on**: Task 5, Task 6, Task 7, Task 8  
 **Outcome**: Maintainers can understand the surface from the code and generated docs.
