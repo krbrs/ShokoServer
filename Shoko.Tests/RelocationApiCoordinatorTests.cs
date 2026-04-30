@@ -13,7 +13,7 @@ using Shoko.Abstractions.Plugin.Models;
 using Shoko.Abstractions.Video.Relocation;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Server.API.v3.Models.Relocation.Input;
-using Shoko.Server.Services.Relocation;
+using Shoko.Server.API.v3.Services;
 using Xunit;
 
 #nullable enable
@@ -31,10 +31,11 @@ public class RelocationApiCoordinatorTests
         var pluginManager = new Mock<IPluginManager>();
         pluginManager.Setup(manager => manager.GetPluginInfo(pluginId)).Returns(CreatePluginInfo(pluginId, plugin, "Scoped plugin", isActive: true));
 
+        var videoService = new Mock<IVideoService>();
         var relocationService = new Mock<IVideoRelocationService>();
         relocationService.Setup(service => service.GetProviderInfo(plugin)).Returns([providerInfo]);
 
-        var coordinator = new RelocationApiCoordinator(pluginManager.Object, new Mock<IConfigurationService>().Object, relocationService.Object);
+        var coordinator = new RelocationApiCoordinator(pluginManager.Object, new Mock<IConfigurationService>().Object, videoService.Object, relocationService.Object);
 
         var result = coordinator.GetAvailableProviders(new RelocationDiscoveryFilter() { PluginID = pluginId });
 
@@ -47,8 +48,9 @@ public class RelocationApiCoordinatorTests
     [Fact]
     public void GetPipeConfiguration_ReturnsNotFound_WhenPipeDoesNotExist()
     {
+        var videoService = new Mock<IVideoService>();
         var relocationService = new Mock<IVideoRelocationService>();
-        var coordinator = new RelocationApiCoordinator(new Mock<IPluginManager>().Object, new Mock<IConfigurationService>().Object, relocationService.Object);
+        var coordinator = new RelocationApiCoordinator(new Mock<IPluginManager>().Object, new Mock<IConfigurationService>().Object, videoService.Object, relocationService.Object);
 
         var result = coordinator.GetPipeConfiguration(Guid.NewGuid());
 

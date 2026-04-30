@@ -51,7 +51,7 @@ using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.Actions;
 using Shoko.Server.Services.Abstraction;
 using Shoko.Server.Services.Configuration;
-using Shoko.Server.Services.Relocation;
+using Shoko.Server.API.v3.Services;
 using Shoko.Server.Services.Connectivity;
 using Shoko.Server.Services.ErrorHandling;
 using Shoko.Server.Settings;
