@@ -151,6 +151,8 @@ ClientBin/
 *.publishsettings
 node_modules/
 /.vs/
+spec-backups/
+BenchmarkDotNet.Artifacts/
 
 # RIA/Silverlight projects
 Generated_Code/
@@ -177,3 +179,11 @@ UpgradeLog*.htm
 /Shoko.Server.VC.db
 
 .env
+
+# AI coding assistant directories
+.specify/
+.opencode/
+.agents/
+
+# macOS
+.DS_Store

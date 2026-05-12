@@ -25,12 +25,14 @@ public interface ISessionWrapper : IDisposable
     ITransaction BeginTransaction();
 
     void Insert(object entity);
+    void SaveOrUpdate(object entity);
 
     void Update(object entity);
 
     void Delete(object entity);
 
     Task InsertAsync(object entity);
+    Task SaveOrUpdateAsync(object entity);
 
     Task UpdateAsync(object entity);
 

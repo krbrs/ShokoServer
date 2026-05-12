@@ -37,11 +37,6 @@ public interface IApplicationPaths
     string PluginsPath { get; }
 
     /// <summary>
-    /// Gets the path to the themes directory.
-    /// </summary>
-    string ThemesPath { get; }
-
-    /// <summary>
     /// Gets the path to the configuration directory.
     /// </summary>
     /// <value>The configuration directory path.</value>

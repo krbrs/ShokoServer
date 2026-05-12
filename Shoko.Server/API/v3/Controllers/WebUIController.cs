@@ -16,13 +16,13 @@ using Shoko.Abstractions.Core.Services;
 using Shoko.Abstractions.Extensions;
 using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Web.Attributes;
-using Shoko.Abstractions.Web.Services;
 using Shoko.Server.API.Annotations;
 using Shoko.Server.API.ModelBinders;
 using Shoko.Server.API.v3.Helpers;
 using Shoko.Server.API.v3.Models.AniDB;
 using Shoko.Server.API.v3.Models.Common;
 using Shoko.Server.Repositories;
+using Shoko.Server.Services;
 
 using FileSummaryGroupByCriteria = Shoko.Server.API.v3.Models.Shoko.WebUI.WebUISeriesFileSummary.FileSummaryGroupByCriteria;
 using Input = Shoko.Server.API.v3.Models.Shoko.WebUI.Input;
@@ -49,7 +49,7 @@ public partial class WebUIController(
     ISettingsProvider settingsProvider,
     IApplicationPaths applicationPaths,
     ISystemUpdateService updateService,
-    IWebThemeService themeService,
+    CssThemeService themeService,
     WebUIFactory webUIFactory,
     ILogger<WebUIController> logger
 ) : BaseController(settingsProvider)
@@ -94,7 +94,7 @@ public partial class WebUIController(
     {
         try
         {
-            var theme = await themeService.InstallThemeFromUrl(body.URL, body.Preview, HttpContext.RequestAborted);
+            var theme = await themeService.InstallThemeFromUrl(body.URL, body.Preview);
             return new WebUITheme(theme, true);
         }
         catch (ValidationException valEx)
@@ -130,14 +130,14 @@ public partial class WebUIController(
                 {
                     using var fileReader = new StreamReader(file.OpenReadStream());
                     var content = await fileReader.ReadToEndAsync();
-                    var theme = await themeService.CreateOrUpdateThemeFromCss(content, Path.GetFileNameWithoutExtension(fileName), preview, HttpContext.RequestAborted);
+                    var theme = await themeService.CreateOrUpdateThemeFromCss(content, Path.GetFileNameWithoutExtension(fileName), preview);
                     return new WebUITheme(theme, true);
                 }
                 case ".json":
                 {
                     using var fileReader = new StreamReader(file.OpenReadStream());
                     var content = await fileReader.ReadToEndAsync();
-                    var theme = await themeService.InstallOrUpdateThemeFromJson(content, Path.GetFileNameWithoutExtension(fileName), preview, HttpContext.RequestAborted);
+                    var theme = await themeService.InstallOrUpdateThemeFromJson(content, Path.GetFileNameWithoutExtension(fileName), preview);
                     return new WebUITheme(theme, true);
                 }
                 default:
@@ -223,7 +223,7 @@ public partial class WebUIController(
 
         try
         {
-            theme = await themeService.UpdateThemeOnline(theme, true, HttpContext.RequestAborted);
+            theme = await themeService.UpdateThemeOnline(theme, true);
             return new WebUITheme(theme, true);
         }
         catch (ValidationException valEx)
@@ -251,7 +251,7 @@ public partial class WebUIController(
 
         try
         {
-            theme = await themeService.UpdateThemeOnline(theme, cancellationToken: HttpContext.RequestAborted);
+            theme = await themeService.UpdateThemeOnline(theme);
             return new WebUITheme(theme, true);
         }
         catch (ValidationException valEx)

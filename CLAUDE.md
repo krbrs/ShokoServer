@@ -129,6 +129,8 @@ Always prefer a cached repository over a direct one when both exist for the same
 
 **Access pattern**: Repositories are accessed via the `RepoFactory` static class (e.g., `RepoFactory.AnimeSeries.GetByID(id)`). `RepoFactory` is DI-registered but exposes static fields for convenience — this is a legacy pattern similar to `Utils.ServiceContainer`. This exists for compatibility where DI is unavailable, but DI should be used if possible.
 
+**Database Access**: Currently uses NHibernate. EF Core migration is in progress (see [EF Core Migration](#ef-core-migration-database-client-migration) section above). Repositories will be updated to use EF Core `DbContext` once automatic EF Core activation is implemented.
+
 ### Scheduling
 
 Quartz.NET with a custom in-memory `ThreadPooledJobStore` (`Shoko.Server/Scheduling/`). Jobs in `Jobs/` are DI-resolved via `JobFactory`. `QueueStateEventHandler` fires domain events (job added/started/completed) consumed by `QueueEventEmitter` → SignalR clients. `DatabaseLocks/` provides named locks to prevent concurrent conflicting DB operations.
@@ -162,6 +164,80 @@ Plugin controllers are registered via `AddPluginControllers` during API setup.
 ### Database Migrations
 
 All schema migrations and data fixups are in `Shoko.Server/Databases/DatabaseFixes.cs`. Append new migrations; never modify existing ones. `Versions` class tracks the applied migration level. Supported backends: SQLite (default), MySQL/MariaDB, SQL Server — selected via `DatabaseFactory`.
+
+### EF Core Migration (Database Client Migration)
+
+**Feature**: Database Client Migration (001-database-client-migration) — Migrating from NHibernate to Entity Framework Core.
+
+**Activation Model**: **Automatic at server boot** — EF Core migrations are applied automatically during normal server startup. Users should NEVER manually run migration commands or switch between NHibernate and EF Core.
+
+**Key Components**:
+- **`ShokoDbContext`** (`Shoko.Server/Data/ShokoDbContext.cs`) — EF Core context with all 75 DbSet properties
+- **`IEntityTypeConfiguration<T>`** (`Shoko.Server/Data/Configurations/`) — 75 entity configurations for all tables
+- **`ValueConverter<T,U>`** (`Shoko.Server/Data/Converters/`) — 7 custom value converters (MessagePack, TypelessMessagePack, FilterExpression, DateOnly, TitleLanguage, TitleType, TmdbContentRating, TmdbProductionCountry, StringList, TypeString)
+- **`BaselineRegistration`** (`Shoko.Server/Data/BaselineRegistration.cs`) — Registers NHibernate schema as EF Core baseline for existing databases
+- **`SchemaComparer`** (`Shoko.Server/Data/SchemaComparison/SchemaComparer.cs`) — Compares EF Core model against actual database schema
+
+**EF Core Commands** (Development/Testing Only):
+```bash
+# Create new migration
+dotnet ef migrations add MigrationName --project Shoko.Server/Shoko.Server.csproj --startup-project Shoko.CLI/Shoko.CLI.csproj
+
+# Apply pending migrations (development/testing only)
+dotnet ef database update --project Shoko.Server/Shoko.Server.csproj --startup-project Shoko.CLI/Shoko.CLI.csproj
+
+# List all migrations
+dotnet ef migrations list --project Shoko.Server/Shoko.Server.csproj --startup-project Shoko.CLI/Shoko.CLI.csproj
+
+# Generate SQL script
+dotnet ef migrations script --project Shoko.Server/Shoko.Server.csproj --startup-project Shoko.CLI/Shoko.CLI.csproj --idempotent
+
+# Remove last migration
+dotnet ef migrations remove --project Shoko.Server/Shoko.Server.csproj --startup-project Shoko.CLI/Shoko.CLI.csproj
+```
+
+**Production Deployment**: Automatic migration at startup. No manual `dotnet ef database update` commands required.
+
+**Startup Migration Flow**:
+1. Detect provider/database/version from `DatabaseSettings`
+2. Run required legacy update/bootstrap steps (`DatabaseFixes.cs`)
+3. Register/apply EF migration baseline as needed (`BaselineRegistration.RegisterBaselineAsync()`)
+4. Apply pending EF Core migrations automatically (`context.Database.Migrate()`)
+5. Continue startup automatically
+
+**Provider-Specific Configuration**:
+- **SQLite**: `DB_TYPE=SQLite`, connection string: `Data Source=shoko.db3;Mode=ReadWriteCreate;Pooling=True`
+- **MySQL/MariaDB**: `DB_TYPE=MySQL`, connection string: `Server=127.0.0.1;Port=3306;Database=shoko;User=shoko;Password=your_password;CharSet=utf8mb4;SslMode=None;AllowPublicKeyRetrieval=True`
+- **SQL Server**: `DB_TYPE=SQLServer`, connection string: `Server=127.0.0.1,1433;Database=shokodb;User Id=sa;Password=YourStrong@Password;TrustServerCertificate=True;MultipleActiveResultSets=true`
+
+**Documentation**:
+- **Migration Guide**: `Shoko.Server/Data/migration-guide.md` — Production deployment and CLI commands
+- **Rollback Guide**: `Shoko.Server/Data/rollback.md` — Rollback procedures for failed migrations
+- **Data Inventory**: `Shoko.Server/Data/inventory.md` — Complete inventory of mappings, converters, repositories, and queries
+
+**Important Notes**:
+- **No Manual Switching**: Users should never manually switch between NHibernate and EF Core
+- **Legacy NHibernate/Bootstrap**: Remains as internal compatibility infrastructure during transition
+- **Automatic Resolution**: Server automatically determines whether to use EF Core or NHibernate bootstrap
+- **Seamless Transition**: Existing databases migrate seamlessly without user intervention
+- **CLI Commands**: For development, testing, and troubleshooting purposes only
+
+**Testing**:
+- **Schema Comparison Tests**: `Shoko.Tests/Database/SchemaComparisonTests.cs` — Validates EF Core model against NHibernate schema
+- **Provider Validation Tests**: `Shoko.IntegrationTests/Providers/` — Provider-specific integration tests for SQLite, MariaDB, SQL Server
+- **Benchmark Tests**: `Shoko.Benchmarks/T172/` — Performance benchmarks comparing EF Core vs NHibernate
+
+**Current Status** (Phase 6: Polish & Cross-Cutting Concerns):
+- ✅ EF Core infrastructure complete (T001-T179)
+- ✅ All 75 entity configurations created
+- ✅ All 7 value converters implemented
+- ✅ Baseline registration implemented
+- ✅ Schema comparison utility implemented
+- ✅ Provider validation tests passing (SQLite, MariaDB, SQL Server)
+- ✅ Performance benchmarks passing (19/20 scenarios)
+- ✅ Documentation complete (migration-guide.md, rollback.md)
+- ⏳ Automatic EF Core activation at server boot (T197 — REQUIRED, not yet implemented)
+- ⏳ NHibernate removal (T180-T189 — BLOCKED until T197 complete)
 
 ## Domain Model Relationships
 
@@ -323,3 +399,9 @@ If no release provider returns a match, `ProcessFileJob` marks the file as unrec
 | `DownloadAniDBImageJob` | 8 (16) | Image download throughput |
 | `DownloadTmdbImageJob` | 12 (24) | Image download throughput |
 | `ValidateAllImagesJob` | 1 (1) | Sequential validation |
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+at `/specs/001-database-client-migration/plan.md`
+<!-- SPECKIT END -->

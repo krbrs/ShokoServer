@@ -22,7 +22,7 @@ public interface IRepository<T, in S>
     void Save(IReadOnlyCollection<T> objs);
 
     Action<T> BeginDeleteCallback { get; set; }
-    Action<ISession, T> DeleteWithOpenTransactionCallback { get; set; }
+    Action<ISessionWrapper, T> DeleteWithOpenTransactionCallback { get; set; }
     Action<T> EndDeleteCallback { get; set; }
     Action<T> BeginSaveCallback { get; set; }
     Action<ISessionWrapper, T> SaveWithOpenTransactionCallback { get; set; }

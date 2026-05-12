@@ -1,9 +1,13 @@
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using NHibernate.Linq;
 using Shoko.Server.Databases;
+using Shoko.Server.Data;
 using Shoko.Server.Models.AniDB;
+using Shoko.Server.Repositories.NHibernate;
 using Shoko.Server.Server;
+using Shoko.Server.Utilities;
 
 namespace Shoko.Server.Repositories.Direct;
 
@@ -13,6 +17,19 @@ public class AniDB_NotifyQueueRepository : BaseDirectRepository<AniDB_NotifyQueu
     {
         return Lock(() =>
         {
+            // Try EF Core path first if available
+            using var sessionWrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            if (sessionWrapper is EfCoreSessionWrapper efSession)
+            {
+                using var context = efSession.Context;
+                return context.Set<AniDB_NotifyQueue>()
+                    .AsNoTracking()
+                    .Where(a => a.Type == type && a.ID == id)
+                    .Take(1)
+                    .SingleOrDefault();
+            }
+            
+            // Fallback to NHibernate path
             using var session = _databaseFactory.SessionFactory.OpenStatelessSession();
             return session.Query<AniDB_NotifyQueue>()
                 .Where(a => a.Type == type && a.ID == id)
@@ -25,6 +42,18 @@ public class AniDB_NotifyQueueRepository : BaseDirectRepository<AniDB_NotifyQueu
     {
         return Lock(() =>
         {
+            // Try EF Core path first if available
+            using var sessionWrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            if (sessionWrapper is EfCoreSessionWrapper efSession)
+            {
+                using var context = efSession.Context;
+                return context.Set<AniDB_NotifyQueue>()
+                    .AsNoTracking()
+                    .Where(a => a.Type == type)
+                    .ToList();
+            }
+            
+            // Fallback to NHibernate path
             using var session = _databaseFactory.SessionFactory.OpenStatelessSession();
             return session.Query<AniDB_NotifyQueue>()
                 .Where(a => a.Type == type)
@@ -36,6 +65,20 @@ public class AniDB_NotifyQueueRepository : BaseDirectRepository<AniDB_NotifyQueu
     {
         Lock(() =>
         {
+            // Try EF Core path first if available
+            using var sessionWrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            if (sessionWrapper is EfCoreSessionWrapper efSession)
+            {
+                using var context = efSession.Context;
+                var itemsToDelete = context.Set<AniDB_NotifyQueue>()
+                    .Where(a => a.Type == type && a.ID == id)
+                    .ToList();
+                context.RemoveRange(itemsToDelete);
+                context.SaveChanges();
+                return;
+            }
+            
+            // Fallback to NHibernate path
             using var session = _databaseFactory.SessionFactory.OpenStatelessSession();
             // Query can't batch delete, while Query can
             session.Query<AniDB_NotifyQueue>().Where(a => a.Type == type && a.ID == id).Delete();

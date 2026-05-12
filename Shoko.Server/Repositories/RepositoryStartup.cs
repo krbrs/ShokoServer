@@ -1,6 +1,7 @@
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Server.Databases;
+using Shoko.Server.Extensions;
 using Shoko.Server.Repositories.Cached;
 using Shoko.Server.Repositories.Cached.AniDB;
 using Shoko.Server.Repositories.Cached.TMDB;
@@ -15,8 +16,13 @@ public static class RepositoryStartup
 {
     public static IServiceCollection AddRepositories(this IServiceCollection services)
     {
-        services.AddSingleton<RepoFactory>();
+        // Register DatabaseFactory first since it's needed for connection string
         services.AddSingleton<DatabaseFactory>();
+        
+        // Register ShokoDbContext so it's available for repositories
+        services.AddShokoDbContext();
+        
+        services.AddSingleton<RepoFactory>();
         services.AddDirectRepository<AniDB_AnimeUpdateRepository>();
 
         services.AddDirectRepository<AniDB_Anime_RelationRepository>();

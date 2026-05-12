@@ -19,7 +19,7 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
     }
 
     public Action<T> BeginDeleteCallback { get; set; }
-    public Action<ISession, T> DeleteWithOpenTransactionCallback { get; set; }
+    public Action<ISessionWrapper, T> DeleteWithOpenTransactionCallback { get; set; }
     public Action<T> EndDeleteCallback { get; set; }
     public Action<T> BeginSaveCallback { get; set; }
     public Action<ISessionWrapper, T> SaveWithOpenTransactionCallback { get; set; }
@@ -29,8 +29,8 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
     {
         return Lock(() =>
         {
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            return session.Get<T>(id);
+            using var wrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            return wrapper.Get<T>(id);
         });
     }
 
@@ -48,8 +48,8 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
     {
         return Lock(() =>
         {
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            return session.CreateCriteria(typeof(T)).List<T>().ToList();
+            using var wrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            return wrapper.Query<T>().ToList();
         });
     }
 
@@ -76,10 +76,10 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
         Lock(() =>
         {
             BeginDeleteCallback?.Invoke(cr);
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            using var transaction = session.BeginTransaction();
-            DeleteWithOpenTransactionCallback?.Invoke(session, cr);
-            session.Delete(cr);
+            using var wrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            var transaction = wrapper.BeginTransaction();
+            DeleteWithOpenTransactionCallback?.Invoke(wrapper, cr);
+            wrapper.Delete(cr);
             transaction.Commit();
             EndDeleteCallback?.Invoke(cr);
         });
@@ -96,12 +96,12 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
                 BeginDeleteCallback?.Invoke(obj);
             }
 
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            using var transaction = session.BeginTransaction();
+            using var wrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            var transaction = wrapper.BeginTransaction();
             foreach (var cr in objs)
             {
-                DeleteWithOpenTransactionCallback?.Invoke(session, cr);
-                session.Delete(cr);
+                DeleteWithOpenTransactionCallback?.Invoke(wrapper, cr);
+                wrapper.Delete(cr);
             }
 
             transaction.Commit();
@@ -126,6 +126,7 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
 
         Lock(() =>
         {
+            DeleteWithOpenTransactionCallback?.Invoke(session.Wrap(), cr);
             session.Delete(cr);
         });
     }
@@ -139,7 +140,7 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
         {
             foreach (var cr in objs)
             {
-                DeleteWithOpenTransactionCallback?.Invoke(session, cr);
+                DeleteWithOpenTransactionCallback?.Invoke(session.Wrap(), cr);
                 session.Delete(cr);
             }
         });
@@ -150,10 +151,10 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
         Lock(() =>
         {
             BeginSaveCallback?.Invoke(obj);
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            using var transaction = session.BeginTransaction();
-            session.SaveOrUpdate(obj);
-            SaveWithOpenTransactionCallback?.Invoke(session.Wrap(), obj);
+            using var wrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            var transaction = wrapper.BeginTransaction();
+            wrapper.SaveOrUpdate(obj);
+            SaveWithOpenTransactionCallback?.Invoke(wrapper, obj);
             transaction.Commit();
             EndSaveCallback?.Invoke(obj);
         });
@@ -165,13 +166,13 @@ public class BaseDirectRepository<T, S> : BaseRepository, IDirectRepository, IRe
 
         Lock(() =>
         {
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            using var transaction = session.BeginTransaction();
+            using var wrapper = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            var transaction = wrapper.BeginTransaction();
             foreach (var obj in objs)
             {
                 BeginSaveCallback?.Invoke(obj);
-                session.SaveOrUpdate(obj);
-                SaveWithOpenTransactionCallback?.Invoke(session.Wrap(), obj);
+                wrapper.SaveOrUpdate(obj);
+                SaveWithOpenTransactionCallback?.Invoke(wrapper, obj);
                 EndSaveCallback?.Invoke(obj);
             }
 

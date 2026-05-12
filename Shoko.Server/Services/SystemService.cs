@@ -34,8 +34,9 @@ using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.User.Services;
 using Shoko.Abstractions.Utilities;
 using Shoko.Abstractions.Video.Services;
-using Shoko.Abstractions.Web.Services;
 using Shoko.Server.API;
+using Shoko.Server.Data;
+using Shoko.Server.Data.SchemaComparison;
 using Shoko.Server.Databases;
 using Shoko.Server.Extensions;
 using Shoko.Server.Filters;
@@ -388,7 +389,7 @@ public class SystemService : ISystemService
             services.AddSingleton<ActionService>();
             services.AddSingleton<AnimeSeriesService>();
             services.AddSingleton<AnimeGroupService>();
-            services.AddSingleton<IWebThemeService, WebThemeService>();
+            services.AddSingleton<CssThemeService>();
             services.AddSingleton<ISystemUpdateService, SystemUpdateService>();
             services.AddSingleton<IMetadataService, AbstractMetadataService>();
             services.AddSingleton<IVideoService, VideoService>();
@@ -671,6 +672,7 @@ public class SystemService : ISystemService
 
                 instance.ExecuteDatabaseFixes();
                 instance.PopulateInitialData();
+                ActivateEfCoreStartupMigrations(cancellationToken);
                 repositoryFactory.PostInit();
             }
             catch (DatabaseCommandException ex)
@@ -701,6 +703,32 @@ public class SystemService : ISystemService
     #endregion
 
     #endregion
+
+    private void ActivateEfCoreStartupMigrations(CancellationToken cancellationToken)
+    {
+        StartupMessage = "Activating EF Core migrations...";
+
+        using var scope = Utils.ServiceContainer.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+        var activationService = new EfStartupActivationService(context);
+        var result = activationService.ActivateAsync(cancellationToken).GetAwaiter().GetResult();
+
+        if (!result.Success)
+        {
+            var errorMessage = result.Errors.Count > 0
+                ? string.Join(" ", result.Errors)
+                : "Unknown EF Core startup activation error.";
+            throw new InvalidOperationException($"EF Core startup activation failed. {errorMessage}");
+        }
+
+        if (result.AppliedMigrations.Count > 0)
+        {
+            StartupMessage = $"Applied EF Core migrations: {string.Join(", ", result.AppliedMigrations)}";
+            return;
+        }
+
+        StartupMessage = "EF Core migrations are up to date.";
+    }
 
     #region Shutdown
 

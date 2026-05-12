@@ -577,7 +577,7 @@ public partial class PluginPackageManager(
                 Thumbnail = list.FirstOrDefault(m => m.Thumbnail is not null)?.Thumbnail,
                 Name = list[0].Name,
                 Releases = list.SelectMany(m => m.Releases)
-                    .OrderByDescending(m => m.Version, new SemverVersionComparer())
+                    .OrderBy(m => m.Version, new SemverVersionComparer())
                     .ThenByDescending(m => m.ReleasedAt)
                     .ToList(),
                 Tags = list.SelectMany(m => m.Tags)

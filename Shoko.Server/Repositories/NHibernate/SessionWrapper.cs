@@ -67,9 +67,19 @@ internal class SessionWrapper : ISessionWrapper
         _session.Save(entity);
     }
 
+    public void SaveOrUpdate(object entity)
+    {
+        _session.SaveOrUpdate(entity);
+    }
+
     public Task InsertAsync(object entity)
     {
         return _session.SaveAsync(entity);
+    }
+
+    public Task SaveOrUpdateAsync(object entity)
+    {
+        return _session.SaveOrUpdateAsync(entity);
     }
 
     public void Update(object entity)

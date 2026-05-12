@@ -67,9 +67,19 @@ internal class StatelessSessionWrapper : ISessionWrapper
         _session.Insert(entity);
     }
 
+    public void SaveOrUpdate(object entity)
+    {
+        throw new NotSupportedException("StatelessSession does not support SaveOrUpdate. Use Insert or Update explicitly.");
+    }
+
     public Task InsertAsync(object entity)
     {
         return _session.InsertAsync(entity);
+    }
+
+    public Task SaveOrUpdateAsync(object entity)
+    {
+        throw new NotSupportedException("StatelessSession does not support SaveOrUpdateAsync. Use InsertAsync or UpdateAsync explicitly.");
     }
 
     public void Update(object entity)

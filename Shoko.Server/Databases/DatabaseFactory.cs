@@ -1,7 +1,11 @@
-﻿using NHibernate;
+﻿using Microsoft.EntityFrameworkCore;
+using NHibernate;
+using Shoko.Server.Data;
 using Shoko.Server.Server;
 using Shoko.Server.Services;
 using Shoko.Server.Utilities;
+using Shoko.Server.Repositories.NHibernate;
+using Shoko.Server.Repositories;
 
 namespace Shoko.Server.Databases;
 
@@ -45,5 +49,19 @@ public class DatabaseFactory(SystemService systemService)
             return _instance;
         }
         set => _instance = value;
+    }
+
+    public ISessionWrapper OpenSessionWrapper(bool useEntityFramework = false)
+    {
+        if (!useEntityFramework)
+        {
+            return SessionFactory.OpenSession().Wrap();
+        }
+
+        var connectionString = Instance.GetConnectionString();
+        var provider = EFCoreOptionsExtensions.FromDatabaseType(Utils.SettingsProvider.GetSettings().Database.Type);
+        var optionsBuilder = new DbContextOptionsBuilder<ShokoDbContext>();
+        optionsBuilder.ConfigureShokoDbContext(provider, connectionString);
+        return new EfCoreSessionWrapper(new ShokoDbContext(optionsBuilder.Options), true);
     }
 }

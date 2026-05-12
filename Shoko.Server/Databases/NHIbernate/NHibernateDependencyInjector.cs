@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using NHibernate;
 using NHibernate.Type;
@@ -38,7 +39,11 @@ public class NHibernateDependencyInjector : EmptyInterceptor
     public override object Instantiate(string clazz, object id)
     {
         // return null -> use default NHibernate entity creation
-        s_allTypes ??= AppDomain.CurrentDomain.GetAssemblies().SelectMany(a => a.GetTypes()).DistinctBy(a => a.FullName).ToDictionary(a => a.FullName, a => a);
+        s_allTypes ??= AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(GetLoadableTypes)
+            .Where(a => a.FullName is not null)
+            .DistinctBy(a => a.FullName)
+            .ToDictionary(a => a.FullName!, a => a);
         if (!s_allTypes.TryGetValue(clazz, out var type)) return null;
         if (!s_typeHasValidConstructors.TryGetValue(clazz, out var hasParameters))
         {
@@ -67,5 +72,17 @@ public class NHibernateDependencyInjector : EmptyInterceptor
         }
 
         return base.OnLoad(entity, id, state, propertyNames, types);
+    }
+
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(a => a is not null)!;
+        }
     }
 }
