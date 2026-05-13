@@ -69,6 +69,8 @@ public class AnimeSeriesConfiguration : IEntityTypeConfiguration<AnimeSeries>
         builder.Ignore(x => x.IsAniListAutoMatchingDisabled);
         builder.Ignore(x => x.IsAnimeshonAutoMatchingDisabled);
         builder.Ignore(x => x.IsKitsuAutoMatchingDisabled);
+        builder.Ignore(x => x.AnimeGroup);
+        builder.Ignore(x => x.TopLevelAnimeGroup);
         builder.Ignore(x => x.AllAnimeEpisodes);
         builder.Ignore(x => x.AnimeEpisodes);
         builder.Ignore(x => x.AllGroupsAbove);

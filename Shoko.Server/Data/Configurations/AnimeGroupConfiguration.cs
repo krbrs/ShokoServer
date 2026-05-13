@@ -53,6 +53,8 @@ public class AnimeGroupConfiguration : IEntityTypeConfiguration<AnimeGroup>
 
         builder.Ignore(x => x.AllSeries);
         builder.Ignore(x => x.MainSeries);
+        builder.Ignore(x => x.Parent);
+        builder.Ignore(x => x.TopLevelAnimeGroup);
         builder.Ignore(x => x.AllGroupsAbove);
         builder.Ignore(x => x.Series);
         builder.Ignore(x => x.Children);
