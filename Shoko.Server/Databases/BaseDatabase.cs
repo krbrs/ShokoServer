@@ -167,6 +167,11 @@ public abstract class BaseDatabase<T>(SystemService systemService) : IDatabase
 
     public void ExecuteDatabaseFixes()
     {
+        if (this is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+        {
+            return;
+        }
+
         foreach (var cmd in Fixes)
         {
             try
@@ -318,6 +323,12 @@ public abstract class BaseDatabase<T>(SystemService systemService) : IDatabase
         var configurationService = Utils.ServiceContainer.GetRequiredService<IConfigurationService>();
         var relocationService = Utils.ServiceContainer.GetRequiredService<IVideoRelocationService>();
         var provider = relocationService.GetProviderInfo<WebAOMRenamer>();
+        if (provider is null)
+        {
+            Logger.Warn("Skipping default rename script creation because the WebAOM renamer provider is unavailable.");
+            return;
+        }
+
         var configuration = provider.ConfigurationInfo is null ? null : Encoding.UTF8.GetBytes(
             configurationService.Serialize(
                 configurationService.New(provider.ConfigurationInfo)

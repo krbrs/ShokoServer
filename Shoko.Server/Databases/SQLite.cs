@@ -28,6 +28,8 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
 {
     public override string Name => "SQLite";
 
+    internal static bool UseEfOnlyBootstrapForTests { get; set; }
+
     private int? _requiredVersion;
 
     public override int RequiredVersion => _requiredVersion ??= _createVersionTable
@@ -174,6 +176,20 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
 
     public override void CreateAndUpdateSchema()
     {
+        if (UseEfOnlyBootstrapForTests)
+        {
+            var result = BootstrapFreshDatabaseAsync(GetConnectionString()).GetAwaiter().GetResult();
+            if (!result.Success)
+            {
+                var errorMessage = result.Errors.Count > 0
+                    ? string.Join(" ", result.Errors)
+                    : "Unknown EF Core SQLite bootstrap error.";
+                throw new InvalidOperationException($"EF Core SQLite bootstrap failed. {errorMessage}");
+            }
+
+            return;
+        }
+
         ConnectionWrapper(GetConnectionString(), myConn =>
         {
             Execute(myConn, "PRAGMA encoding = \"UTF-16\"");
