@@ -11,6 +11,7 @@ using Shoko.Server.Data;
 using Shoko.Server.Databases;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
+using Shoko.Server.Scheduling.Jobs.AniDB;
 using Shoko.Server.Scheduling.Jobs.Shoko;
 using Shoko.Server.Utilities;
 using Xunit;
@@ -1109,6 +1110,96 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             var persistedPlace = RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID);
             Assert.NotNull(persistedPlace);
             Assert.Equal(video.VideoLocalID, persistedPlace!.VideoID);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_AddFileToMyListJob_MissingVideoLocal_SkipsWithoutThrowing()
+    {
+        var job = new AddFileToMyListJob(
+            Utils.ServiceContainer.GetRequiredService<Shoko.Server.Providers.AniDB.Interfaces.IRequestFactory>(),
+            Utils.ServiceContainer.GetRequiredService<Shoko.Server.Settings.ISettingsProvider>(),
+            Utils.ServiceContainer.GetRequiredService<Quartz.ISchedulerFactory>(),
+            RepoFactory.VideoLocalUser,
+            Utils.ServiceContainer.GetRequiredService<Shoko.Abstractions.User.Services.IUserDataService>())
+        {
+            Hash = Guid.NewGuid().ToString("N")
+        };
+        job._logger = Utils.ServiceContainer.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+            .CreateLogger(nameof(SQLite_AddFileToMyListJob_MissingVideoLocal_SkipsWithoutThrowing));
+
+        Assert.Null(RepoFactory.VideoLocal.GetByEd2k(job.Hash));
+
+        job.PostInit();
+        await job.Process();
+    }
+
+    [Fact]
+    public void SQLite_AddFileToMyListJob_ExistingVideoLocal_ResolvesNormally()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-addtomylist-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "existing-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            File.WriteAllBytes(absolutePath, new byte[4096]);
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite AddToMyList Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var hash = Guid.NewGuid().ToString("N");
+            var video = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = Path.GetFileName(relativePath),
+                FileSize = new FileInfo(absolutePath).Length,
+                Hash = hash,
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = 0,
+                MyListID = 0
+            };
+            RepoFactory.VideoLocal.Save(video, updateEpisodes: false);
+
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = relativePath,
+                VideoID = video.VideoLocalID,
+            });
+
+            var job = new AddFileToMyListJob(
+                Utils.ServiceContainer.GetRequiredService<Shoko.Server.Providers.AniDB.Interfaces.IRequestFactory>(),
+                Utils.ServiceContainer.GetRequiredService<Shoko.Server.Settings.ISettingsProvider>(),
+                Utils.ServiceContainer.GetRequiredService<Quartz.ISchedulerFactory>(),
+                RepoFactory.VideoLocalUser,
+                Utils.ServiceContainer.GetRequiredService<Shoko.Abstractions.User.Services.IUserDataService>())
+            {
+                Hash = hash
+            };
+            job._logger = Utils.ServiceContainer.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                .CreateLogger(nameof(SQLite_AddFileToMyListJob_ExistingVideoLocal_ResolvesNormally));
+
+            job.PostInit();
+
+            var details = job.Details;
+            Assert.True(details.TryGetValue("File Path", out var filePathValue));
+            Assert.Contains(relativePath, filePathValue?.ToString(), StringComparison.Ordinal);
         }
         finally
         {
