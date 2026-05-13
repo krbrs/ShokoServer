@@ -34,6 +34,7 @@ public class AddFileToMyListJob : BaseJob
     private readonly VideoLocal_UserRepository _vlUsers;
     private readonly IUserDataService _userDataService;
     private VideoLocal _videoLocal;
+    private bool _isStale;
 
     public string Hash { get; set; }
     public bool ReadStates { get; set; } = true;
@@ -41,7 +42,11 @@ public class AddFileToMyListJob : BaseJob
     public override void PostInit()
     {
         _videoLocal = RepoFactory.VideoLocal.GetByEd2k(Hash);
-        if (_videoLocal == null) throw new JobExecutionException($"VideoLocal not Found: {Hash}");
+        if (_videoLocal == null)
+        {
+            _isStale = true;
+            _logger.LogWarning("Skipping stale AddFileToMyListJob because VideoLocal not found: {Hash}", Hash);
+        }
     }
 
     public override string TypeName => "Add File to MyList";
@@ -59,7 +64,11 @@ public class AddFileToMyListJob : BaseJob
         _logger.LogInformation("Processing {Job}: {FileName} - {Hash} - {ReadStates}",
             nameof(AddFileToMyListJob), _videoLocal?.FirstValidPlace?.FileName, Hash, ReadStates);
 
-        if (_videoLocal == null) return;
+        if (_isStale || _videoLocal == null)
+        {
+            _logger.LogWarning("Skipping stale AddFileToMyListJob for missing VideoLocal: {Hash}", Hash);
+            return;
+        }
 
         var settings = _settingsProvider.GetSettings();
 
