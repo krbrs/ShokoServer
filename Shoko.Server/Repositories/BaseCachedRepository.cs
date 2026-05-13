@@ -286,15 +286,11 @@ public abstract class BaseCachedRepository<T, S> : BaseRepository, ICachedReposi
             using var transaction = context.Database.BeginTransaction();
             try
             {
-                var entry = context.Entry(obj);
-                if (entry.IsKeySet)
-                {
-                    context.Update(obj);
-                }
-                else
-                {
+                if (ShouldInsert(context, obj))
                     context.Add(obj);
-                }
+                else
+                    context.Update(obj);
+
                 context.SaveChanges();
                 transaction.Commit();
             }
@@ -333,15 +329,10 @@ public abstract class BaseCachedRepository<T, S> : BaseRepository, ICachedReposi
             {
                 foreach (var obj in objs)
                 {
-                    var entry = context.Entry(obj);
-                    if (entry.IsKeySet)
-                    {
-                        context.Update(obj);
-                    }
-                    else
-                    {
+                    if (ShouldInsert(context, obj))
                         context.Add(obj);
-                    }
+                    else
+                        context.Update(obj);
                 }
                 context.SaveChanges();
                 transaction.Commit();
@@ -525,6 +516,20 @@ public abstract class BaseCachedRepository<T, S> : BaseRepository, ICachedReposi
     protected virtual void DeleteFromCacheUnsafe(T cr)
     {
         Cache.Remove(cr);
+    }
+
+    private bool ShouldInsert(ShokoDbContext context, T obj)
+    {
+        var key = SelectKey(obj);
+        if (Equals(key, default(S)))
+            return true;
+
+        var existing = context.Find<T>(key);
+        if (existing is null)
+            return true;
+
+        context.Entry(existing).State = EntityState.Detached;
+        return false;
     }
 
     private void DeleteFromDatabaseUnsafe(T cr)

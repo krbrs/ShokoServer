@@ -367,6 +367,37 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_VideoLocal_SaveDeletedDetachedEntity_ReinsertsWithoutConcurrencyException()
+    {
+        var repo = RepoFactory.VideoLocal;
+        var createdAt = DateTime.UtcNow;
+        var video = new VideoLocal
+        {
+            DateTimeCreated = createdAt,
+            DateTimeUpdated = createdAt,
+            FileName = $"reinsert-video-{Guid.NewGuid():N}.mkv",
+            FileSize = 3072,
+            Hash = Guid.NewGuid().ToString("N"),
+            HashSource = 0,
+            IsIgnored = false,
+            IsVariation = false,
+            MediaVersion = 0,
+            MyListID = 0
+        };
+
+        repo.Save(video, updateEpisodes: false);
+        repo.Delete(video);
+
+        video.FileSize = 6144;
+        video.DateTimeUpdated = DateTime.UtcNow;
+        repo.Save(video, updateEpisodes: false);
+
+        var persisted = repo.GetByID(video.VideoLocalID);
+        Assert.NotNull(persisted);
+        Assert.Equal(6144, persisted.FileSize);
+    }
+
+    [Fact]
     public async Task SQLite_NotifyVideoFileChangeDetected_KnownVideoWithNewPlace_CreatesPlaceWithoutUpdatingVideo()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-videopath-{Guid.NewGuid():N}");
