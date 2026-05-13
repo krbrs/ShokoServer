@@ -41,9 +41,9 @@ public class DateOnlyConverter : TypeConverter, IUserType
         {
             DateOnly i => i,
             DateTime i => i.ToDateOnly(),
-            int i => new DateTime(i).ToDateOnly(),
-            long i => new DateTime(i).ToDateOnly(),
-            string i => DateTime.Parse(i).ToDateOnly(),
+            int i => FromNumeric(i),
+            long i => FromNumeric(i),
+            string i => ParseString(i),
             null => null,
             _ => throw new ArgumentException("DestinationType must be System.DateOnly.")
         };
@@ -76,6 +76,25 @@ public class DateOnlyConverter : TypeConverter, IUserType
 
     public override object CreateInstance(ITypeDescriptorContext? context, IDictionary? propertyValues)
         => true;
+
+    private static DateOnly FromNumeric(long value)
+    {
+        if (value >= 0 && value <= DateOnly.MaxValue.DayNumber)
+            return DateOnly.FromDayNumber((int)value);
+
+        return new DateTime(value).ToDateOnly();
+    }
+
+    private static DateOnly? ParseString(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numericValue))
+            return FromNumeric(numericValue);
+
+        return DateTime.Parse(value).ToDateOnly();
+    }
 
     #region IUserType Members
 
