@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.Serialization;
 using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json;
@@ -144,11 +145,11 @@ public class RawFile : BaseDirectory
         var vl_user = RepoFactory.VideoLocalUser.GetByUserAndVideoLocalID(uid, vl.VideoLocalID);
         offset = (long)Math.Round((vl_user?.ProgressPosition ?? TimeSpan.Zero).TotalMilliseconds);
 
-        var place = vl.FirstValidPlace;
+        var place = vl.FirstValidPlace ?? vl.Places.FirstOrDefault();
         if (place != null)
         {
             filename = place.RelativePath;
-            server_path = place.Path;
+            server_path = place.Path ?? place.RelativePath;
             videolocal_place_id = place.ID;
             import_folder_id = place.ManagedFolderID;
         }

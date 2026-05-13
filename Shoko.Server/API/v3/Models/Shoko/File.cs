@@ -220,7 +220,7 @@ public partial class File
             FileID = location.VideoID;
             ManagedFolderID = location.ManagedFolderID;
             RelativePath = location.RelativePath;
-            AbsolutePath = includeAbsolutePaths ? location.Path : null;
+            AbsolutePath = includeAbsolutePaths ? location.Path ?? location.RelativePath : null;
             IsAccessible = location.IsAvailable;
         }
 

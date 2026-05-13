@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Video.Services;
+using Shoko.Server.API.v2.Models.common;
 using Shoko.Server.Data;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
@@ -486,6 +487,50 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             Assert.NotNull(persistedVideo);
             Assert.StartsWith("__stub__", persistedVideo.Hash);
             Assert.Equal(40, persistedVideo.Hash.Length);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_NotifyVideoFileChangeDetected_UsesRelativePathWhenManagedFolderIsMissing()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-videopath-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "folderless-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Import Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var videoService = Utils.ServiceContainer.GetRequiredService<IVideoService>();
+            await videoService.NotifyVideoFileChangeDetected(folder, relativePath, updateMylist: false);
+
+            var persistedPlace = RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID);
+            Assert.NotNull(persistedPlace);
+            Assert.True(persistedPlace!.Path is not null);
+
+            RepoFactory.ShokoManagedFolder.Delete(folder);
+
+            var persistedVideo = RepoFactory.VideoLocal.GetByID(persistedPlace.VideoID);
+            Assert.NotNull(persistedVideo);
+
+            var rawFile = new RawFile(new Microsoft.AspNetCore.Http.DefaultHttpContext(), persistedVideo!, 0, 0);
+            Assert.Equal(relativePath, rawFile.filename);
+            Assert.Equal(relativePath, rawFile.server_path);
         }
         finally
         {
