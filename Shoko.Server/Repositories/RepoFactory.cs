@@ -325,6 +325,6 @@ public class RepoFactory
 
         // These regeneration passes are legacy repair/cleanup logic for existing/imported data.
         // A fresh EF-created SQLite database does not need them, and they are still NH-backed.
-        return repo is VideoLocalRepository or AnimeSeriesRepository;
+        return repo is AnimeSeriesRepository;
     }
 }

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using FluentNHibernate.Utils;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NutzCode.InMemoryIndex;
 using Quartz;
@@ -92,6 +93,57 @@ public class VideoLocalRepository : BaseCachedRepository<VideoLocal, int>
             .GroupBy(a => a.Hash)
             .ToDictionary(g => g.Key, g => g.ToList());
         SystemService.StartupMessage = $"Database - Validating - {nameof(VideoLocal)} Cleaning Empty Records...";
+
+        if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+        {
+            list = Cache.Values.Where(a => a.IsEmpty() || a.Places.Count == 0).ToList();
+            count = 0;
+            max = list.Count;
+            foreach (var batch in list.Batch(50))
+            {
+                var batchList = batch.ToList();
+                var videoIds = batchList.Select(a => a.VideoLocalID).Where(id => id > 0).ToList();
+                if (videoIds.Count == 0)
+                    continue;
+
+                using var context = GetDbContext();
+                using var transaction = context.Database.BeginTransaction();
+                try
+                {
+                    var places = context.VideoLocal_Place.Where(place => videoIds.Contains(place.VideoID)).ToList();
+                    var users = context.VideoLocal_User.Where(user => videoIds.Contains(user.VideoLocalID)).ToList();
+                    var hashes = context.VideoLocal_HashDigest.Where(hash => videoIds.Contains(hash.VideoLocalID)).ToList();
+                    var videos = context.VideoLocal.Where(video => videoIds.Contains(video.VideoLocalID)).ToList();
+
+                    context.VideoLocal_Place.RemoveRange(places);
+                    context.VideoLocal_User.RemoveRange(users);
+                    context.VideoLocal_HashDigest.RemoveRange(hashes);
+                    context.VideoLocal.RemoveRange(videos);
+                    context.SaveChanges();
+                    transaction.Commit();
+                }
+                catch
+                {
+                    transaction.Rollback();
+                    throw;
+                }
+
+                count += batchList.Count;
+                SystemService.StartupMessage =
+                    $"Database - Validating - {nameof(VideoLocal)} Cleaning Empty Records - {count}/{max}...";
+            }
+
+            using (var efSession = _databaseFactory.OpenSessionWrapper(useEntityFramework: true))
+            {
+                RepoFactory.VideoLocalPlace.Populate(efSession, displayName: false);
+                RepoFactory.VideoLocalUser.Populate(efSession, displayName: false);
+                RepoFactory.VideoLocalHashDigest.Populate(efSession, displayName: false);
+                Populate(efSession, displayName: false);
+            }
+
+            return;
+        }
+
         using var session = _databaseFactory.SessionFactory.OpenSession();
         using (var transaction = session.BeginTransaction())
         {

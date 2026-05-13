@@ -663,6 +663,125 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_VideoLocal_RegenerateDb_EfOnlyRemovesEmptyAndNoPlaceRows()
+    {
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        try
+        {
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Video Cleanup Folder {Guid.NewGuid():N}",
+                Path = Path.Combine(Path.GetTempPath(), $"shoko-video-cleanup-{Guid.NewGuid():N}"),
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var removableVideo = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = $"no-place-{Guid.NewGuid():N}.mkv",
+                FileSize = 4321,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = VideoLocal.MEDIA_VERSION,
+                MyListID = 0,
+                MediaInfo = new Shoko.Server.MediaInfo.MediaContainer()
+            };
+            RepoFactory.VideoLocal.Save(removableVideo, updateEpisodes: false);
+
+            var validVideo = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = $"valid-{Guid.NewGuid():N}.mkv",
+                FileSize = 8765,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = VideoLocal.MEDIA_VERSION,
+                MyListID = 0,
+                MediaInfo = new Shoko.Server.MediaInfo.MediaContainer()
+            };
+            RepoFactory.VideoLocal.Save(validVideo, updateEpisodes: false);
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = "valid-video.mkv",
+                VideoID = validVideo.VideoLocalID
+            });
+
+            var user = RepoFactory.JMMUser.GetAll().FirstOrDefault();
+            Assert.NotNull(user);
+
+            RepoFactory.VideoLocalUser.Save(new VideoLocal_User
+            {
+                JMMUserID = user!.JMMUserID,
+                VideoLocalID = removableVideo.VideoLocalID,
+                LastUpdated = DateTime.UtcNow,
+                ResumePosition = 0,
+                WatchedCount = 1
+            });
+            RepoFactory.VideoLocalHashDigest.Save(new VideoLocal_HashDigest
+            {
+                VideoLocalID = removableVideo.VideoLocalID,
+                Type = "MD5",
+                Value = Guid.NewGuid().ToString("N")
+            });
+
+            var emptyVideoId = 0;
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                var emptyVideo = new VideoLocal
+                {
+                    DateTimeCreated = DateTime.UtcNow,
+                    DateTimeUpdated = DateTime.UtcNow,
+                    FileName = string.Empty,
+                    FileSize = 0,
+                    Hash = string.Empty,
+                    HashSource = 0,
+                    IsIgnored = false,
+                    IsVariation = false,
+                    MediaVersion = VideoLocal.MEDIA_VERSION,
+                    MyListID = 0
+                };
+                context.VideoLocal.Add(emptyVideo);
+                context.SaveChanges();
+                emptyVideoId = emptyVideo.VideoLocalID;
+            }
+
+            RepoFactory.VideoLocal.Populate();
+            RepoFactory.VideoLocalPlace.Populate();
+            RepoFactory.VideoLocalUser.Populate();
+            RepoFactory.VideoLocalHashDigest.Populate();
+            RepoFactory.VideoLocal.RegenerateDb();
+
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                Assert.Null(context.VideoLocal.AsNoTracking().SingleOrDefault(video => video.VideoLocalID == emptyVideoId));
+                Assert.Null(context.VideoLocal.AsNoTracking().SingleOrDefault(video => video.VideoLocalID == removableVideo.VideoLocalID));
+                Assert.NotNull(context.VideoLocal.AsNoTracking().SingleOrDefault(video => video.VideoLocalID == validVideo.VideoLocalID));
+            }
+
+            Assert.Null(RepoFactory.VideoLocal.GetByID(emptyVideoId));
+            Assert.Null(RepoFactory.VideoLocal.GetByID(removableVideo.VideoLocalID));
+            Assert.NotNull(RepoFactory.VideoLocal.GetByID(validVideo.VideoLocalID));
+            Assert.Empty(RepoFactory.VideoLocalUser.GetByVideoLocalID(removableVideo.VideoLocalID));
+            Assert.Empty(RepoFactory.VideoLocalHashDigest.GetByVideoLocalID(removableVideo.VideoLocalID));
+            Assert.NotNull(RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID("valid-video.mkv", folder.ID));
+        }
+        finally
+        {
+            SQLite.UseEfOnlyBootstrapForTests = false;
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
