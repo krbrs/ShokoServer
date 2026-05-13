@@ -70,7 +70,24 @@ public abstract class BaseCachedRepository<T, S> : BaseRepository, ICachedReposi
 
         // This is only called from main thread, so we don't need to lock
         var settings = Utils.SettingsProvider.GetSettings();
-        Cache = new PocoCache<S, T>(session.CreateCriteria(typeof(T)).SetTimeout(settings.CachingDatabaseTimeout).List<T>(), SelectKey);
+        if (session is EfCoreSessionWrapper efSession)
+        {
+            IQueryable<T> query = efSession.Context.Set<T>().AsNoTracking();
+            var entityType = efSession.Context.Model.FindEntityType(typeof(T));
+            if (entityType is not null)
+            {
+                foreach (var navigation in entityType.GetNavigations())
+                {
+                    query = query.Include(navigation.Name);
+                }
+            }
+
+            Cache = new PocoCache<S, T>(query.ToList(), SelectKey);
+        }
+        else
+        {
+            Cache = new PocoCache<S, T>(session.CreateCriteria(typeof(T)).SetTimeout(settings.CachingDatabaseTimeout).List<T>(), SelectKey);
+        }
 
         PopulateIndexes();
     }

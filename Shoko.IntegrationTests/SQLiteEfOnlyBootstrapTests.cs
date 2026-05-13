@@ -33,10 +33,12 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
+            Assert.Equal(0, RepoFactory.EfOnlyPopulateSessionCount);
 
             var firstHost = await StartServiceAsync(waitForStartupComplete: true);
             try
             {
+                Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
                 Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
 
@@ -58,6 +60,7 @@ public class SQLiteEfOnlyBootstrapTests
             var secondHost = await StartServiceAsync(waitForStartupComplete: true);
             try
             {
+                Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
                 Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
             }

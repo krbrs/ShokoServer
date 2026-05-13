@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using Shoko.Server.Databases;
 using Shoko.Server.Repositories.Cached;
 using Shoko.Server.Repositories.Cached.AniDB;
 using Shoko.Server.Repositories.Cached.TMDB;
@@ -21,7 +22,10 @@ public class RepoFactory
 {
     private readonly ILogger<RepoFactory> _logger;
     private readonly SystemService _systemService;
+    private readonly DatabaseFactory _databaseFactory;
     private readonly ICachedRepository[] _cachedRepositories;
+
+    internal static int EfOnlyPopulateSessionCount { get; private set; }
 
     public static AniDB_Anime_CharacterRepository AniDB_Anime_Character;
     public static AniDB_Anime_Character_CreatorRepository AniDB_Anime_Character_Creator;
@@ -98,6 +102,7 @@ public class RepoFactory
     public RepoFactory(
         ILogger<RepoFactory> logger,
         SystemService systemService,
+        DatabaseFactory databaseFactory,
         IEnumerable<ICachedRepository> repositories,
         AniDB_Anime_CharacterRepository anidbAnimeCharacter,
         AniDB_Anime_Character_CreatorRepository anidbAnimeCharacterCreator,
@@ -174,6 +179,7 @@ public class RepoFactory
     {
         _logger = logger;
         _systemService = systemService;
+        _databaseFactory = databaseFactory;
         _cachedRepositories = repositories.ToArray();
         AniDB_Anime = anidbAnime;
         AniDB_Anime_Character = anidbAnimeCharacter;
@@ -254,9 +260,20 @@ public class RepoFactory
             return;
         try
         {
+            EfOnlyPopulateSessionCount = 0;
             foreach (var repo in _cachedRepositories)
             {
-                repo.Populate(cancellationToken: cancellationToken);
+                if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+                {
+                    using var session = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+                    repo.Populate(session, cancellationToken: cancellationToken);
+                    EfOnlyPopulateSessionCount++;
+                }
+                else
+                {
+                    repo.Populate(cancellationToken: cancellationToken);
+                }
+
                 if (cancellationToken.IsCancellationRequested)
                     return;
             }
