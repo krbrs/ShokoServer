@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Shoko.Server.API.v3.Models.Shoko;
 using Shoko.Server.Data.Converters;
+using Shoko.Server.Data.Configurations;
 using Shoko.Server.Models.AniDB;
 using Shoko.Server.Models.AniDB.Embedded;
 using Shoko.Server.Models.Shoko.Embedded;
@@ -144,7 +145,13 @@ public partial class ShokoDbContext : DbContext
     /// </summary>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ShokoDbContext).Assembly);
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(ShokoDbContext).Assembly,
+            type =>
+                type != typeof(CrossRef_AniDB_TraktV2Configuration) &&
+                type != typeof(Trakt_EpisodeConfiguration) &&
+                type != typeof(Trakt_SeasonConfiguration) &&
+                type != typeof(Trakt_ShowConfiguration));
         ApplySqlServerLegacyCompatibility(modelBuilder);
         modelBuilder.Ignore<AniDB_Season>();
         modelBuilder.Ignore<CrossRef_AniDB_TMDB_Season>();

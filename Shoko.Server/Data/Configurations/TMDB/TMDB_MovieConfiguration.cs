@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Shoko.Server.Data.Comparers;
 using Shoko.Server.Data.Converters;
 using Shoko.Server.Models.TMDB;
 
@@ -64,6 +65,8 @@ public class TMDB_MovieConfiguration : IEntityTypeConfiguration<TMDB_Movie>
         builder.Property(x => x.ProductionCountries)
             .IsRequired()
             .HasConversion(new TmdbProductionCountryConverter());
+        builder.Property(x => x.ProductionCountries)
+            .Metadata.SetValueComparer(TmdbProductionCountryComparer.Instance);
 
         builder.Property(x => x.RuntimeMinutes)
             .HasColumnName("Runtime");
