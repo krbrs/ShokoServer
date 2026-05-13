@@ -26,6 +26,7 @@ public class RepoFactory
     private readonly ICachedRepository[] _cachedRepositories;
 
     internal static int EfOnlyPopulateSessionCount { get; private set; }
+    internal static int EfOnlySkippedRepairPassCount { get; private set; }
 
     public static AniDB_Anime_CharacterRepository AniDB_Anime_Character;
     public static AniDB_Anime_Character_CreatorRepository AniDB_Anime_Character_Creator;
@@ -291,8 +292,16 @@ public class RepoFactory
         try
         {
             _systemService.StartupMessage = "RepoFactory.PostInit()";
+            EfOnlySkippedRepairPassCount = 0;
             foreach (var repo in _cachedRepositories)
             {
+                if (ShouldSkipFreshSqliteEfOnlyRepairPass(repo))
+                {
+                    EfOnlySkippedRepairPassCount++;
+                    _logger.LogDebug("Skipping NH-backed repair pass {Repository} for fresh SQLite EF-only bootstrap path.", repo.GetType().Name);
+                    continue;
+                }
+
                 _systemService.StartupMessage = $"Database - Validating - {repo.GetType().Name.Replace("Repository", "")} Database Regeneration...";
                 repo.RegenerateDb();
             }
@@ -307,5 +316,15 @@ public class RepoFactory
             _logger.LogError(e, "There was an error starting the Database Factory - Regenerating: {Ex}", e);
             throw;
         }
+    }
+
+    private bool ShouldSkipFreshSqliteEfOnlyRepairPass(ICachedRepository repo)
+    {
+        if (_databaseFactory.Instance is not SQLite || !SQLite.UseEfOnlyBootstrapForTests)
+            return false;
+
+        // These regeneration passes are legacy repair/cleanup logic for existing/imported data.
+        // A fresh EF-created SQLite database does not need them, and they are still NH-backed.
+        return repo is VideoLocalRepository or VideoLocal_PlaceRepository or AnimeSeriesRepository;
     }
 }
