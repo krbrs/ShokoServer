@@ -300,7 +300,7 @@ public class VideoService : IVideoService
         var settings = _settingsProvider.GetSettings();
         var videoIsKnown = !string.IsNullOrEmpty(video.Hash) && video.FileSize > 0;
         var hasXrefs = videoIsKnown && video.EpisodeCrossReferences is { Count: > 0 };
-        var shouldSave = videoIsKnown && locationAvailable && videoLocation.ID is 0;
+        var shouldSaveVideo = locationAvailable && videoLocation.ID is 0 && video.VideoLocalID is 0;
         var shouldHash = !videoIsKnown || (video.Hashes is { } hashes && (hashes.Count == 0 || _videoHashingService.AllEnabledHashTypes.Any(a => !hashes.Any(b => b.Type == a))));
         var shouldRelocate = hasXrefs && !shouldHash && locationAvailable && settings.Plugins.Renamer.RelocateOnImport && (
             managedFolder.DropFolderType.HasFlag(DropFolderType.Source) ||
@@ -323,15 +323,18 @@ public class VideoService : IVideoService
             if (hasXrefs && !video.DateTimeImported.HasValue)
             {
                 video.DateTimeImported = DateTime.Now;
-                shouldSave = true;
+                shouldSaveVideo = true;
             }
         }
 
-        if (shouldSave)
+        if (shouldSaveVideo)
         {
             _logger.LogTrace("Saving video record for path: {Path} (Hash={Hash},Size={Size})", absolutePath, video.Hash, video.FileSize);
             _videoLocalRepository.Save(video, true);
+        }
 
+        if (locationAvailable && videoLocation.ID is 0)
+        {
             _logger.LogTrace("Saving video file record for path: {Path} (Hash={Hash},Size={Size})", absolutePath, video.Hash, video.FileSize);
             videoLocation.VideoID = video.VideoLocalID;
             _videoLocalPlaceRepository.Save(videoLocation);
@@ -410,7 +413,7 @@ public class VideoService : IVideoService
                 DateTimeUpdated = DateTime.Now,
                 DateTimeCreated = DateTime.Now,
                 FileName = Path.GetFileName(relativePath),
-                Hash = string.Empty,
+                Hash = $"__stub__{Guid.NewGuid():N}",
             };
         }
 

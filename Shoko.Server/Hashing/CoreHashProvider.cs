@@ -24,6 +24,10 @@ namespace Shoko.Server.Hashing;
 /// </summary>
 public class CoreHashProvider(ILogger<CoreHashProvider> logger, ConfigurationProvider<CoreHashProvider.CoreHasherConfiguration> configurationProvider) : IHashProvider<CoreHashProvider.CoreHasherConfiguration>
 {
+    private static bool? _rhashAvailable;
+    private static Exception? _rhashUnavailableException;
+    private static int _rhashFallbackLogged;
+
     /// <inheritdoc/>
     public string Name => "Built-In Hasher";
 
@@ -39,7 +43,10 @@ public class CoreHashProvider(ILogger<CoreHashProvider> logger, ConfigurationPro
     static CoreHashProvider()
     {
         if (!PlatformUtility.IsWindows)
+        {
+            TryInitializeNativeRhash();
             return;
+        }
 
         try
         {
@@ -50,10 +57,14 @@ public class CoreHashProvider(ILogger<CoreHashProvider> logger, ConfigurationPro
                 dllPath = Path.Combine(fi.Directory!.FullName, Environment.Is64BitProcess ? "x64" : "x86", "librhash.dll");
                 _rhashModule.ModuleHandle = LoadLibraryEx(dllPath, IntPtr.Zero, 0);
             }
+
+            _rhashAvailable = _rhashModule.ModuleHandle != IntPtr.Zero;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             _rhashModule.ModuleHandle = IntPtr.Zero;
+            _rhashAvailable = false;
+            _rhashUnavailableException = ex;
         }
     }
 
@@ -78,6 +89,9 @@ public class CoreHashProvider(ILogger<CoreHashProvider> logger, ConfigurationPro
             }
         }
 
+        if (!IsNativeRhashAvailable())
+            return null;
+
         // On Linux/macOS, query the library version natively.
         // rhash_transmit is currently available in all librhash versions,
         // but deprecated in 1.4.5, whereas rhash_ctrl was added in 1.4.5.
@@ -85,7 +99,6 @@ public class CoreHashProvider(ILogger<CoreHashProvider> logger, ConfigurationPro
         // The version is encoded as 0xMMmmpp00 (major, minor, patch, 0).
         try
         {
-            Native.rhash_library_init();
             UIntPtr versionPtr;
             try
             {
@@ -155,8 +168,14 @@ public class CoreHashProvider(ILogger<CoreHashProvider> logger, ConfigurationPro
         if (request.IsEmpty)
             return [];
 
-        if (request.ForceSharpHasher || (_rhashModule.ModuleHandle == IntPtr.Zero && PlatformUtility.IsWindows))
+        if (request.ForceSharpHasher)
             return await CalculateHashesSharp(request, cancellationToken).ConfigureAwait(false);
+
+        if (!IsNativeRhashAvailable())
+        {
+            LogRhashFallbackOnce();
+            return await CalculateHashesSharp(request, cancellationToken).ConfigureAwait(false);
+        }
 
         try
         {
@@ -352,6 +371,37 @@ public class CoreHashProvider(ILogger<CoreHashProvider> logger, ConfigurationPro
     }
 
     #region DLL Loading
+
+    private static bool IsNativeRhashAvailable()
+        => _rhashAvailable ?? TryInitializeNativeRhash();
+
+    private static bool TryInitializeNativeRhash()
+    {
+        try
+        {
+            Native.rhash_library_init();
+            _rhashAvailable = true;
+            _rhashUnavailableException = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _rhashAvailable = false;
+            _rhashUnavailableException = ex;
+            return false;
+        }
+    }
+
+    private void LogRhashFallbackOnce()
+    {
+        if (Interlocked.Exchange(ref _rhashFallbackLogged, 1) != 0)
+            return;
+
+        logger.LogWarning(
+            "Native RHash is unavailable on this runtime. Falling back to the managed C# hasher for all files. {Reason}",
+            _rhashUnavailableException?.GetType().Name ?? "Native library not available"
+        );
+    }
 
     private static readonly Destructor _rhashModule = new(); //static Destructor hack
 

@@ -182,6 +182,13 @@ public class VideoLocalRepository : BaseCachedRepository<VideoLocal, int>
         {
             obj.MediaInfo = null;
             base.Save(obj);
+
+            if (updateEpisodes)
+            {
+                RepoFactory.AnimeEpisode.Save(obj.AnimeEpisodes);
+            }
+
+            return;
         }
 
         UpdateMediaContracts(obj);

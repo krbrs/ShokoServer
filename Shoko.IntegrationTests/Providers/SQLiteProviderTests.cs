@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Shoko.Abstractions.Video.Services;
 using Shoko.Server.Data;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
@@ -303,5 +305,211 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
         var all = repo.GetAll();
         Assert.Contains(all, s => s.AnimeSeriesID == series1.AnimeSeriesID);
         Assert.Contains(all, s => s.AnimeSeriesID == series2.AnimeSeriesID);
+    }
+
+    [Fact]
+    public void SQLite_VideoLocal_SaveNewEntity_AssignsIdWithoutConcurrencyException()
+    {
+        var repo = RepoFactory.VideoLocal;
+        var createdAt = DateTime.UtcNow;
+        var video = new VideoLocal
+        {
+            DateTimeCreated = createdAt,
+            DateTimeUpdated = createdAt,
+            FileName = $"scan-import-{Guid.NewGuid():N}.mkv",
+            FileSize = 1024,
+            Hash = Guid.NewGuid().ToString("N"),
+            HashSource = 0,
+            IsIgnored = false,
+            IsVariation = false,
+            MediaVersion = 0,
+            MyListID = 0
+        };
+
+        repo.Save(video, updateEpisodes: false);
+
+        Assert.True(video.VideoLocalID > 0);
+
+        var persisted = repo.GetByID(video.VideoLocalID);
+        Assert.NotNull(persisted);
+        Assert.Equal(video.FileName, persisted.FileName);
+        Assert.Equal(video.FileSize, persisted.FileSize);
+    }
+
+    [Fact]
+    public void SQLite_VideoLocal_SaveExistingEntity_UpdatesPersistedRow()
+    {
+        var repo = RepoFactory.VideoLocal;
+        var createdAt = DateTime.UtcNow;
+        var video = new VideoLocal
+        {
+            DateTimeCreated = createdAt,
+            DateTimeUpdated = createdAt,
+            FileName = $"existing-video-{Guid.NewGuid():N}.mkv",
+            FileSize = 2048,
+            Hash = Guid.NewGuid().ToString("N"),
+            HashSource = 0,
+            IsIgnored = false,
+            IsVariation = false,
+            MediaVersion = 0,
+            MyListID = 0
+        };
+
+        repo.Save(video, updateEpisodes: false);
+
+        video.FileSize = 4096;
+        video.DateTimeUpdated = DateTime.UtcNow;
+        repo.Save(video, updateEpisodes: false);
+
+        var persisted = repo.GetByID(video.VideoLocalID);
+        Assert.NotNull(persisted);
+        Assert.Equal(4096, persisted.FileSize);
+    }
+
+    [Fact]
+    public async Task SQLite_NotifyVideoFileChangeDetected_KnownVideoWithNewPlace_CreatesPlaceWithoutUpdatingVideo()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-videopath-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "known-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+            var fileSize = new FileInfo(absolutePath).Length;
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Import Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var video = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = Path.GetFileName(relativePath),
+                FileSize = fileSize,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = 0,
+                MyListID = 0
+            };
+            RepoFactory.VideoLocal.Save(video, updateEpisodes: false);
+
+            RepoFactory.FileNameHash.Save(new FileNameHash
+            {
+                FileName = Path.GetFileName(relativePath),
+                FileSize = fileSize,
+                Hash = video.Hash,
+                DateTimeUpdated = DateTime.UtcNow
+            });
+
+            var videoService = Utils.ServiceContainer.GetRequiredService<IVideoService>();
+            await videoService.NotifyVideoFileChangeDetected(folder, relativePath, updateMylist: false);
+
+            var persistedPlace = RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID);
+            Assert.NotNull(persistedPlace);
+            Assert.Equal(video.VideoLocalID, persistedPlace.VideoID);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_NotifyVideoFileChangeDetected_NewUnknownFile_CreatesStubVideoAndPlace()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-videopath-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "new-unknown-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Import Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var videoService = Utils.ServiceContainer.GetRequiredService<IVideoService>();
+            await videoService.NotifyVideoFileChangeDetected(folder, relativePath, updateMylist: false);
+
+            var persistedPlace = RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID);
+            Assert.NotNull(persistedPlace);
+            Assert.True(persistedPlace.VideoID > 0);
+
+            var persistedVideo = RepoFactory.VideoLocal.GetByID(persistedPlace.VideoID);
+            Assert.NotNull(persistedVideo);
+            Assert.StartsWith("__stub__", persistedVideo.Hash);
+            Assert.Equal(40, persistedVideo.Hash.Length);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_NotifyVideoFileChangeDetected_MultipleUnknownFiles_CreateDistinctStubHashes()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-videopath-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Import Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var relativePaths = new[] { "first-unknown-video.mkv", "second-unknown-video.mkv" };
+            foreach (var relativePath in relativePaths)
+            {
+                var absolutePath = Path.Combine(tempRoot, relativePath);
+                await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+            }
+
+            var videoService = Utils.ServiceContainer.GetRequiredService<IVideoService>();
+            foreach (var relativePath in relativePaths)
+            {
+                await videoService.NotifyVideoFileChangeDetected(folder, relativePath, updateMylist: false);
+            }
+
+            var persistedVideos = relativePaths
+                .Select(relativePath => RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID))
+                .Where(place => place is not null)
+                .Select(place => RepoFactory.VideoLocal.GetByID(place!.VideoID))
+                .Where(video => video is not null)
+                .ToList();
+
+            Assert.Equal(2, persistedVideos.Count);
+            Assert.Equal(2, persistedVideos.Select(video => video!.Hash).Distinct().Count());
+            Assert.All(persistedVideos, video => Assert.StartsWith("__stub__", video!.Hash));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
     }
 }
