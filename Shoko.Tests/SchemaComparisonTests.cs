@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Shoko.Server.Data;
 using Shoko.Server.Data.SchemaComparison;
+using Shoko.Server.Databases;
 using Xunit;
 
 #nullable enable
@@ -328,5 +329,33 @@ public class SchemaComparisonTests : IDisposable
         verifyCommand.CommandText = $"SELECT COUNT(*) FROM __EFMigrationsHistory WHERE MigrationId = '{initialCreateMigrationId}'";
         var registrationCount = Convert.ToInt32(await verifyCommand.ExecuteScalarAsync());
         Assert.Equal(1, registrationCount);
+    }
+
+    [Fact]
+    public async Task SQLite_FreshEfBootstrap_CreatesSchemaAndIsIdempotent()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ShokoDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+
+        var firstResult = await SQLite.BootstrapFreshDatabaseAsync($"Data Source={_dbPath}");
+
+        Assert.True(firstResult.Success, string.Join(Environment.NewLine, firstResult.Errors));
+        Assert.True(firstResult.BaselineRegistration?.IsFreshDatabase, "Fresh database should skip baseline registration.");
+        Assert.True(firstResult.AppliedMigrations.Count > 0, "Fresh database should apply migrations.");
+        Assert.False(string.IsNullOrWhiteSpace(firstResult.BaselineMigrationId));
+        Assert.Contains(firstResult.BaselineMigrationId, firstResult.AppliedMigrations);
+
+        using (var verifyContext = new ShokoDbContext(optionsBuilder.Options))
+        {
+            var comparer = new SchemaComparer(verifyContext);
+            var compareResult = comparer.Compare();
+            Assert.True(compareResult.IsValid, $"Schema comparison failed: {string.Join(Environment.NewLine, compareResult.Errors.Take(10).Select(e => $"{e.TableName}.{e.ColumnName}: {e.Message}"))}");
+        }
+
+        var secondResult = await SQLite.BootstrapFreshDatabaseAsync($"Data Source={_dbPath}");
+        Assert.True(secondResult.Success, string.Join(Environment.NewLine, secondResult.Errors));
+        Assert.NotNull(secondResult.BaselineRegistration);
+        Assert.True(secondResult.BaselineRegistration!.Success, string.Join(Environment.NewLine, secondResult.BaselineRegistration.Errors));
+        Assert.Empty(secondResult.AppliedMigrations);
     }
 }

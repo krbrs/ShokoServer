@@ -2,12 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using FluentNHibernate.Cfg;
 using FluentNHibernate.Cfg.Db;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using NHibernate;
 using Shoko.Abstractions.Extensions;
+using Shoko.Server.Data;
+using Shoko.Server.Data.SchemaComparison;
 using Shoko.Server.Databases.NHibernate;
 using Shoko.Server.Databases.SqliteFixes;
 using Shoko.Server.Repositories;
@@ -195,6 +200,16 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
             SystemService.StartupMessage = "Database - Applying Schema Patches...";
             ExecuteWithException(myConn, _patchCommands);
         });
+    }
+
+    internal static async Task<EfStartupActivationResult> BootstrapFreshDatabaseAsync(string connectionString, CancellationToken cancellationToken = default)
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ShokoDbContext>();
+        optionsBuilder.ConfigureShokoDbContext(EFCoreDatabaseProvider.SQLite, connectionString);
+
+        await using var context = new ShokoDbContext(optionsBuilder.Options);
+        var activationService = new EfStartupActivationService(context);
+        return await activationService.ActivateAsync(cancellationToken).ConfigureAwait(false);
     }
 
     #region Tables | Version Commands
