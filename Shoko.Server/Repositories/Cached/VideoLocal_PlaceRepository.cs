@@ -47,6 +47,21 @@ public class VideoLocal_PlaceRepository : BaseCachedRepository<VideoLocal_Place,
         var entries = Cache.Values.Where(a => a is { VideoID: 0 } or { ManagedFolderID: 0 } or { RelativePath: null or "" }).ToList();
         var total = entries.Count;
         var current = 0;
+
+        if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+        {
+            foreach (var batch in entries.Batch(50))
+            {
+                var batchList = batch.ToList();
+                Delete(batchList);
+                current += batchList.Count;
+                SystemService.StartupMessage =
+                    $"Database - Validating - {nameof(VideoLocal_Place)} Removing Orphaned VideoLocal_Places - {current}/{total}...";
+            }
+
+            return;
+        }
+
         using var session = _databaseFactory.SessionFactory.OpenSession();
         foreach (var batch in entries.Batch(50))
         {

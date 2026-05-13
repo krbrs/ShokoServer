@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Server.API.v2.Models.common;
 using Shoko.Server.Data;
+using Shoko.Server.Databases;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
 using Shoko.Server.Scheduling.Jobs.Shoko;
@@ -587,6 +588,77 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             {
                 Directory.Delete(tempRoot, recursive: true);
             }
+        }
+    }
+
+    [Fact]
+    public void SQLite_VideoLocalPlace_RegenerateDb_EfOnlyRemovesOrphansAndKeepsValidRows()
+    {
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        try
+        {
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Place Cleanup Folder {Guid.NewGuid():N}",
+                Path = Path.Combine(Path.GetTempPath(), $"shoko-place-cleanup-{Guid.NewGuid():N}"),
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var video = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = $"place-cleanup-{Guid.NewGuid():N}.mkv",
+                FileSize = 1234,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = 0,
+                MyListID = 0
+            };
+            RepoFactory.VideoLocal.Save(video, updateEpisodes: false);
+
+            var validPlace = new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = "valid-place.mkv",
+                VideoID = video.VideoLocalID
+            };
+            RepoFactory.VideoLocalPlace.Save(validPlace);
+
+            var orphanId = 0;
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                var orphan = new VideoLocal_Place
+                {
+                    ManagedFolderID = 0,
+                    RelativePath = "orphan-place.mkv",
+                    VideoID = 0
+                };
+                context.VideoLocal_Place.Add(orphan);
+                context.SaveChanges();
+                orphanId = orphan.ID;
+            }
+
+            RepoFactory.VideoLocalPlace.Populate();
+            RepoFactory.VideoLocalPlace.RegenerateDb();
+
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                Assert.Null(context.VideoLocal_Place.AsNoTracking().SingleOrDefault(place => place.ID == orphanId));
+                Assert.NotNull(context.VideoLocal_Place.AsNoTracking().SingleOrDefault(place => place.ID == validPlace.ID));
+            }
+
+            Assert.Null(RepoFactory.VideoLocalPlace.GetAll().SingleOrDefault(place => place.ID == orphanId));
+            Assert.NotNull(RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(validPlace.RelativePath, folder.ID));
+        }
+        finally
+        {
+            SQLite.UseEfOnlyBootstrapForTests = false;
         }
     }
 

@@ -40,7 +40,7 @@ public class SQLiteEfOnlyBootstrapTests
             try
             {
                 Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
-                Assert.Equal(3, RepoFactory.EfOnlySkippedRepairPassCount);
+                Assert.Equal(2, RepoFactory.EfOnlySkippedRepairPassCount);
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
                 Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
 
@@ -63,7 +63,7 @@ public class SQLiteEfOnlyBootstrapTests
             try
             {
                 Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
-                Assert.Equal(3, RepoFactory.EfOnlySkippedRepairPassCount);
+                Assert.Equal(2, RepoFactory.EfOnlySkippedRepairPassCount);
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
                 Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
             }
