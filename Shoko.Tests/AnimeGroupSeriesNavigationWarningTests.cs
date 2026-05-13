@@ -17,8 +17,14 @@ public class AnimeGroupSeriesNavigationWarningTests
 
         Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeGroup.Parent), StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeGroup.TopLevelAnimeGroup), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeGroup.Children), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeGroup.AllChildren), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeGroup.AllGroupsAbove), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeGroup.Series), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeGroup.AllSeries), StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeSeries.AnimeGroup), StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeSeries.TopLevelAnimeGroup), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(warnings, message => message.Contains(nameof(Shoko.Server.Models.Shoko.AnimeSeries.AllGroupsAbove), StringComparison.OrdinalIgnoreCase));
     }
 
     private static TestScope CreateContext(out List<string> warnings)
