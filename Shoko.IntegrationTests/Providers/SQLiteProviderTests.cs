@@ -10,6 +10,7 @@ using Shoko.Server.API.v2.Models.common;
 using Shoko.Server.Data;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
+using Shoko.Server.Scheduling.Jobs.Shoko;
 using Shoko.Server.Utilities;
 using Xunit;
 
@@ -579,6 +580,86 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             Assert.Equal(2, persistedVideos.Count);
             Assert.Equal(2, persistedVideos.Select(video => video!.Hash).Distinct().Count());
             Assert.All(persistedVideos, video => Assert.StartsWith("__stub__", video!.Hash));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
+    {
+        var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
+        {
+            VideoLocalID = int.MaxValue - 1
+        };
+        job._logger = Utils.ServiceContainer.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+            .CreateLogger(nameof(SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing));
+
+        Assert.Null(RepoFactory.VideoLocal.GetByID(job.VideoLocalID));
+
+        job.PostInit();
+        await job.Process();
+    }
+
+    [Fact]
+    public async Task SQLite_MediaInfoJob_ExistingVideoLocal_ProcessesNormally()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-mediainfo-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "existing-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite MediaInfo Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var video = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = Path.GetFileName(relativePath),
+                FileSize = new FileInfo(absolutePath).Length,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = 0,
+                MyListID = 0
+            };
+            RepoFactory.VideoLocal.Save(video, updateEpisodes: false);
+
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = relativePath,
+                VideoID = video.VideoLocalID,
+            });
+
+            var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
+            {
+                VideoLocalID = video.VideoLocalID
+            };
+            job._logger = Utils.ServiceContainer.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                .CreateLogger(nameof(SQLite_MediaInfoJob_ExistingVideoLocal_ProcessesNormally));
+
+            job.PostInit();
+            await job.Process();
+
+            var persistedPlace = RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID);
+            Assert.NotNull(persistedPlace);
+            Assert.Equal(video.VideoLocalID, persistedPlace!.VideoID);
         }
         finally
         {

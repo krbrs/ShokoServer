@@ -22,6 +22,7 @@ public class MediaInfoJob : BaseJob
 
     private VideoLocal _vlocal;
     private string _fileName;
+    private bool _isStale;
 
     public int VideoLocalID { get; set; }
 
@@ -31,7 +32,13 @@ public class MediaInfoJob : BaseJob
     public override void PostInit()
     {
         _vlocal = RepoFactory.VideoLocal.GetByID(VideoLocalID);
-        if (_vlocal == null) throw new JobExecutionException($"VideoLocal not Found: {VideoLocalID}");
+        if (_vlocal == null)
+        {
+            _isStale = true;
+            _logger.LogWarning("Skipping stale MediaInfoJob because VideoLocal not found: {VideoLocalID}", VideoLocalID);
+            return;
+        }
+
         _fileName = Utils.GetDistinctPath(_vlocal.FirstValidPlace?.Path);
     }
 
@@ -40,6 +47,12 @@ public class MediaInfoJob : BaseJob
     public override Task Process()
     {
         _logger.LogInformation("Processing {Job}: {FileName}", nameof(MediaInfoJob), _fileName);
+
+        if (_isStale)
+        {
+            _logger.LogWarning("Skipping stale MediaInfoJob for missing VideoLocal: {VideoLocalID}", VideoLocalID);
+            return Task.CompletedTask;
+        }
 
         var place = _vlocal?.FirstResolvedPlace;
         if (place == null)
