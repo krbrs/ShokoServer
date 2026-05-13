@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Shoko.Server.Data.Comparers;
 using Shoko.Server.Data.Converters;
 using Shoko.Server.Models.TMDB;
 
@@ -32,6 +33,8 @@ public class TMDB_PersonConfiguration : IEntityTypeConfiguration<TMDB_Person>
         builder.Property(x => x.Aliases)
             .IsRequired()
             .HasConversion(new StringListConverter());
+        builder.Property(x => x.Aliases)
+            .Metadata.SetValueComparer(StringListComparer.Instance);
 
         builder.Property(x => x.Gender)
             .IsRequired()

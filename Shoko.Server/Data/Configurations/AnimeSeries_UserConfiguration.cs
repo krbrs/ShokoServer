@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Shoko.Server.Data.Comparers;
 using Shoko.Server.Data.Converters;
 using Shoko.Server.Models.Shoko;
 
@@ -60,6 +61,8 @@ public class AnimeSeries_UserConfiguration : IEntityTypeConfiguration<AnimeSerie
         builder.Property(x => x.UserTags)
             .IsRequired()
             .HasConversion(new StringListConverter());
+        builder.Property(x => x.UserTags)
+            .Metadata.SetValueComparer(StringListComparer.Instance);
 
         builder.Property(x => x.LastUpdated)
             .IsRequired();

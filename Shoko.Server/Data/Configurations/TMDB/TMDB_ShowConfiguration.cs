@@ -48,14 +48,20 @@ public class TMDB_ShowConfiguration : IEntityTypeConfiguration<TMDB_Show>
         builder.Property(x => x.Genres)
             .IsRequired()
             .HasConversion(new StringListConverter());
+        builder.Property(x => x.Genres)
+            .Metadata.SetValueComparer(StringListComparer.Instance);
 
         builder.Property(x => x.Keywords)
             .IsRequired()
             .HasConversion(new StringListConverter());
+        builder.Property(x => x.Keywords)
+            .Metadata.SetValueComparer(StringListComparer.Instance);
 
         builder.Property(x => x.ContentRatings)
             .IsRequired()
             .HasConversion(new TmdbContentRatingConverter());
+        builder.Property(x => x.ContentRatings)
+            .Metadata.SetValueComparer(TmdbContentRatingComparer.Instance);
 
         builder.Property(x => x.ProductionCountries)
             .IsRequired()
