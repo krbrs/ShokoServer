@@ -33,14 +33,18 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
+            SQLite.ResetTestState();
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
             Assert.Equal(0, RepoFactory.EfOnlyPopulateSessionCount);
             Assert.Equal(0, RepoFactory.EfOnlySkippedRepairPassCount);
+            Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
 
             var firstHost = await StartServiceAsync(waitForStartupComplete: true);
             try
             {
                 Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
                 Assert.Equal(0, RepoFactory.EfOnlySkippedRepairPassCount);
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
                 Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
 
@@ -64,6 +68,7 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
                 Assert.Equal(0, RepoFactory.EfOnlySkippedRepairPassCount);
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
                 Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
             }
@@ -76,6 +81,7 @@ public class SQLiteEfOnlyBootstrapTests
         }
         finally
         {
+            SQLite.ResetTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
 

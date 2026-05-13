@@ -517,7 +517,10 @@ public class SystemService : ISystemService
 
             StartupMessage = "Initializing Session Factory...";
             databaseFactory.CloseSessionFactory();
-            _ = databaseFactory.SessionFactory;
+            if (databaseFactory.Instance is not SQLite || !SQLite.UseEfOnlyBootstrapForTests)
+            {
+                _ = databaseFactory.SessionFactory;
+            }
 
             if (cancellationToken.IsCancellationRequested)
                 return;

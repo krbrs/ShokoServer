@@ -29,6 +29,14 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
     public override string Name => "SQLite";
 
     internal static bool UseEfOnlyBootstrapForTests { get; set; }
+    internal static int SessionFactoryCreateCallCount { get; private set; }
+    internal static bool ThrowOnSessionFactoryCreateForTests { get; set; }
+
+    internal static void ResetTestState()
+    {
+        SessionFactoryCreateCallCount = 0;
+        ThrowOnSessionFactoryCreateForTests = false;
+    }
 
     private int? _requiredVersion;
 
@@ -130,6 +138,12 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
 
     public override ISessionFactory CreateSessionFactory()
     {
+        SessionFactoryCreateCallCount++;
+        if (UseEfOnlyBootstrapForTests && ThrowOnSessionFactoryCreateForTests)
+        {
+            throw new InvalidOperationException("NH SessionFactory creation is disallowed in the SQLite EF-only test path.");
+        }
+
         var settings = Utils.SettingsProvider.GetSettings();
         return Fluently.Configure()
             .Database(MsSqliteConfiguration.Standard.ConnectionString(c => c.Is(GetConnectionString()))
