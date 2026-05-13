@@ -88,10 +88,6 @@ public class VideoLocalRepository : BaseCachedRepository<VideoLocal, int>
             // ignore
         }
 
-        var locals = Cache.Values
-            .Where(a => !string.IsNullOrWhiteSpace(a.Hash))
-            .GroupBy(a => a.Hash)
-            .ToDictionary(g => g.Key, g => g.ToList());
         SystemService.StartupMessage = $"Database - Validating - {nameof(VideoLocal)} Cleaning Empty Records...";
 
         if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
@@ -141,9 +137,74 @@ public class VideoLocalRepository : BaseCachedRepository<VideoLocal, int>
                 Populate(efSession, displayName: false);
             }
 
+            var duplicateGroups = Cache.Values
+                .Where(a => !string.IsNullOrWhiteSpace(a.Hash))
+                .GroupBy(a => a.Hash)
+                .ToDictionary(g => g.Key, g => g.ToList());
+            var videoLocalComparer = new VideoLocalComparer();
+
+            SystemService.StartupMessage = $"Database - Validating - {nameof(VideoLocal)} Checking for Duplicate Records...";
+            max = duplicateGroups.Values.Sum(values => Math.Max(values.Count - 1, 0));
+            count = 0;
+            foreach (var hash in duplicateGroups.Keys)
+            {
+                var values = duplicateGroups[hash];
+                values.Sort(videoLocalComparer);
+                var to = values.First();
+                var fromList = values.Except(to).ToList();
+                if (fromList.Count == 0)
+                    continue;
+
+                var loserIds = fromList.Select(a => a.VideoLocalID).Where(id => id > 0).ToList();
+                if (loserIds.Count == 0)
+                    continue;
+
+                using var context = GetDbContext();
+                using var transaction = context.Database.BeginTransaction();
+                try
+                {
+                    var places = context.VideoLocal_Place.Where(place => loserIds.Contains(place.VideoID)).ToList();
+                    foreach (var place in places)
+                    {
+                        place.VideoID = to.VideoLocalID;
+                    }
+
+                    var users = context.VideoLocal_User.Where(user => loserIds.Contains(user.VideoLocalID)).ToList();
+                    var hashesToDelete = context.VideoLocal_HashDigest.Where(hashDigest => loserIds.Contains(hashDigest.VideoLocalID)).ToList();
+                    var videosToDelete = context.VideoLocal.Where(video => loserIds.Contains(video.VideoLocalID)).ToList();
+
+                    context.VideoLocal_Place.UpdateRange(places);
+                    context.VideoLocal_User.RemoveRange(users);
+                    context.VideoLocal_HashDigest.RemoveRange(hashesToDelete);
+                    context.VideoLocal.RemoveRange(videosToDelete);
+                    context.SaveChanges();
+                    transaction.Commit();
+                }
+                catch
+                {
+                    transaction.Rollback();
+                    throw;
+                }
+
+                count += fromList.Count;
+                SystemService.StartupMessage = $"Database - Validating - {nameof(VideoLocal)} Cleaning Duplicate Records - {count}/{max}...";
+            }
+
+            using (var efSession = _databaseFactory.OpenSessionWrapper(useEntityFramework: true))
+            {
+                RepoFactory.VideoLocalPlace.Populate(efSession, displayName: false);
+                RepoFactory.VideoLocalUser.Populate(efSession, displayName: false);
+                RepoFactory.VideoLocalHashDigest.Populate(efSession, displayName: false);
+                Populate(efSession, displayName: false);
+            }
+
             return;
         }
 
+        var locals = Cache.Values
+            .Where(a => !string.IsNullOrWhiteSpace(a.Hash))
+            .GroupBy(a => a.Hash)
+            .ToDictionary(g => g.Key, g => g.ToList());
         using var session = _databaseFactory.SessionFactory.OpenSession();
         using (var transaction = session.BeginTransaction())
         {

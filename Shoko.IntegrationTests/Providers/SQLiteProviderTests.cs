@@ -782,6 +782,164 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_VideoLocal_RegenerateDb_EfOnlyMergesDuplicateRowsByHash()
+    {
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        try
+        {
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Duplicate Merge Folder {Guid.NewGuid():N}",
+                Path = Path.Combine(Path.GetTempPath(), $"shoko-duplicate-merge-{Guid.NewGuid():N}"),
+                IsWatched = true
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var duplicateHash = Guid.NewGuid().ToString("N");
+            var survivor = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = $"survivor-{Guid.NewGuid():N}.mkv",
+                FileSize = 1111,
+                Hash = duplicateHash,
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = VideoLocal.MEDIA_VERSION,
+                MyListID = 0,
+                MediaInfo = new Shoko.Server.MediaInfo.MediaContainer()
+            };
+            var loser = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = $"loser-{Guid.NewGuid():N}.mkv",
+                FileSize = 1111,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 1,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = VideoLocal.MEDIA_VERSION,
+                MyListID = 0,
+                MediaInfo = new Shoko.Server.MediaInfo.MediaContainer()
+            };
+            var untouched = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = $"untouched-{Guid.NewGuid():N}.mkv",
+                FileSize = 2222,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = VideoLocal.MEDIA_VERSION,
+                MyListID = 0,
+                MediaInfo = new Shoko.Server.MediaInfo.MediaContainer()
+            };
+
+            RepoFactory.VideoLocal.Save(survivor, updateEpisodes: false);
+            RepoFactory.VideoLocal.Save(loser, updateEpisodes: false);
+            RepoFactory.VideoLocal.Save(untouched, updateEpisodes: false);
+
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = "survivor-place.mkv",
+                VideoID = survivor.VideoLocalID
+            });
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = "loser-place.mkv",
+                VideoID = loser.VideoLocalID
+            });
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = "untouched-place.mkv",
+                VideoID = untouched.VideoLocalID
+            });
+
+            var user = RepoFactory.JMMUser.GetAll().FirstOrDefault();
+            Assert.NotNull(user);
+
+            RepoFactory.VideoLocalUser.Save(new VideoLocal_User
+            {
+                JMMUserID = user!.JMMUserID,
+                VideoLocalID = loser.VideoLocalID,
+                LastUpdated = DateTime.UtcNow,
+                ResumePosition = 0,
+                WatchedCount = 1
+            });
+            RepoFactory.VideoLocalHashDigest.Save(new VideoLocal_HashDigest
+            {
+                VideoLocalID = loser.VideoLocalID,
+                Type = "MD5",
+                Value = Guid.NewGuid().ToString("N")
+            });
+
+            RepoFactory.VideoLocal.Populate();
+            RepoFactory.VideoLocalPlace.Populate();
+            RepoFactory.VideoLocalUser.Populate();
+            RepoFactory.VideoLocalHashDigest.Populate();
+
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                context.Database.ExecuteSqlRaw("DROP INDEX IF EXISTS UIX_VideoLocal_Hash");
+                context.Database.ExecuteSqlRaw("UPDATE VideoLocal SET Hash = {0} WHERE VideoLocalID = {1}", duplicateHash, loser.VideoLocalID);
+            }
+
+            try
+            {
+                RepoFactory.VideoLocal.Populate();
+                RepoFactory.VideoLocalPlace.Populate();
+                RepoFactory.VideoLocalUser.Populate();
+                RepoFactory.VideoLocalHashDigest.Populate();
+                RepoFactory.VideoLocal.RegenerateDb();
+            }
+            finally
+            {
+                using var scope = Utils.ServiceContainer.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                context.Database.ExecuteSqlRaw(
+                    "UPDATE VideoLocal SET Hash = {0} WHERE VideoLocalID = {1} AND Hash = {2}",
+                    Guid.NewGuid().ToString("N"),
+                    loser.VideoLocalID,
+                    duplicateHash);
+                context.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS UIX_VideoLocal_Hash on VideoLocal(Hash)");
+            }
+
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                Assert.NotNull(context.VideoLocal.AsNoTracking().SingleOrDefault(video => video.VideoLocalID == survivor.VideoLocalID));
+                Assert.Null(context.VideoLocal.AsNoTracking().SingleOrDefault(video => video.VideoLocalID == loser.VideoLocalID));
+                Assert.NotNull(context.VideoLocal.AsNoTracking().SingleOrDefault(video => video.VideoLocalID == untouched.VideoLocalID));
+            }
+
+            Assert.NotNull(RepoFactory.VideoLocal.GetByID(survivor.VideoLocalID));
+            Assert.Null(RepoFactory.VideoLocal.GetByID(loser.VideoLocalID));
+            Assert.NotNull(RepoFactory.VideoLocal.GetByID(untouched.VideoLocalID));
+
+            var survivorPlaces = RepoFactory.VideoLocalPlace.GetByVideoLocal(survivor.VideoLocalID);
+            Assert.Contains(survivorPlaces, place => place.RelativePath == "survivor-place.mkv");
+            Assert.Contains(survivorPlaces, place => place.RelativePath == "loser-place.mkv");
+            Assert.DoesNotContain(RepoFactory.VideoLocalPlace.GetAll(), place => place.VideoID == loser.VideoLocalID);
+
+            Assert.Empty(RepoFactory.VideoLocalUser.GetByVideoLocalID(loser.VideoLocalID));
+            Assert.Empty(RepoFactory.VideoLocalHashDigest.GetByVideoLocalID(loser.VideoLocalID));
+            Assert.NotNull(RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID("untouched-place.mkv", folder.ID));
+        }
+        finally
+        {
+            SQLite.UseEfOnlyBootstrapForTests = false;
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
