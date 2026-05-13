@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NHibernate;
 using NLog;
@@ -90,7 +91,14 @@ public class AnimeSeriesRepository : BaseCachedRepository<AnimeSeries, int>
                 {
                     var group = groupCreator.GetOrCreateSingleGroupForSeries(s);
                     s.AnimeGroupID = group.AnimeGroupID;
-                    Save(s, false, true);
+                    if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+                    {
+                        SaveAnimeGroupRepairWithEf(s);
+                    }
+                    else
+                    {
+                        Save(s, false, true);
+                    }
                 }
                 catch
                 {
@@ -115,6 +123,25 @@ public class AnimeSeriesRepository : BaseCachedRepository<AnimeSeries, int>
     public ChangeTracker<int> GetChangeTracker()
     {
         return Changes;
+    }
+
+    private void SaveAnimeGroupRepairWithEf(AnimeSeries series)
+    {
+        series.DateTimeUpdated = DateTime.Now;
+
+        using var context = GetDbContext();
+        var existingSeries = context.AnimeSeries.SingleOrDefault(a => a.AnimeSeriesID == series.AnimeSeriesID);
+        if (existingSeries == null)
+        {
+            throw new InvalidOperationException($"AnimeSeries {series.AnimeSeriesID} was not found during SQLite EF-only group repair.");
+        }
+
+        existingSeries.AnimeGroupID = series.AnimeGroupID;
+        existingSeries.DateTimeUpdated = series.DateTimeUpdated;
+        context.SaveChanges();
+
+        UpdateCache(series);
+        Changes.AddOrUpdate(series.AnimeSeriesID);
     }
 
     public override void Save(AnimeSeries obj)

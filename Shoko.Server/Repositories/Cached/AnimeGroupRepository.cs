@@ -54,6 +54,23 @@ public class AnimeGroupRepository : BaseCachedRepository<AnimeGroup, int>
 
     public void Save(AnimeGroup group, bool recursive)
     {
+        if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+        {
+            base.Save(group);
+            _changes.AddOrUpdate(group.AnimeGroupID);
+
+            if (group.AnimeGroupParentID.HasValue && recursive)
+            {
+                var parentGroup = GetByID(group.AnimeGroupParentID.Value);
+                if (parentGroup != null && parentGroup.AnimeGroupParentID == group.AnimeGroupID)
+                {
+                    Save(parentGroup, true);
+                }
+            }
+
+            return;
+        }
+
         using var session = _databaseFactory.SessionFactory.OpenSession();
         Lock(session, s =>
         {

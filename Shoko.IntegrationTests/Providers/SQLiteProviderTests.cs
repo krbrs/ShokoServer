@@ -940,6 +940,106 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_AnimeSeries_RegenerateDb_EfOnlyRepairsMissingGroups()
+    {
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var validGroup = new AnimeGroup
+            {
+                GroupName = $"valid-group-{Guid.NewGuid():N}",
+                DateTimeCreated = now,
+                DateTimeUpdated = now
+            };
+            RepoFactory.AnimeGroup.Save(validGroup);
+
+            var validSeries = new AnimeSeries
+            {
+                AniDB_ID = 880001 + Random.Shared.Next(1000),
+                AnimeGroupID = validGroup.AnimeGroupID,
+                DateTimeCreated = now,
+                DateTimeUpdated = now
+            };
+            var noGroupSeries = new AnimeSeries
+            {
+                AniDB_ID = 890001 + Random.Shared.Next(1000),
+                AnimeGroupID = 0,
+                DateTimeCreated = now,
+                DateTimeUpdated = now
+            };
+            var danglingGroupSeries = new AnimeSeries
+            {
+                AniDB_ID = 900001 + Random.Shared.Next(1000),
+                AnimeGroupID = int.MaxValue - 123,
+                DateTimeCreated = now,
+                DateTimeUpdated = now
+            };
+
+            RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+            {
+                AnimeID = validSeries.AniDB_ID,
+                MainTitle = $"valid-{Guid.NewGuid():N}",
+                AllTitles = string.Empty,
+                AllTags = string.Empty,
+                Description = string.Empty
+            });
+            RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+            {
+                AnimeID = noGroupSeries.AniDB_ID,
+                MainTitle = $"nogroup-{Guid.NewGuid():N}",
+                AllTitles = string.Empty,
+                AllTags = string.Empty,
+                Description = string.Empty
+            });
+            RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+            {
+                AnimeID = danglingGroupSeries.AniDB_ID,
+                MainTitle = $"dangling-{Guid.NewGuid():N}",
+                AllTitles = string.Empty,
+                AllTags = string.Empty,
+                Description = string.Empty
+            });
+
+            RepoFactory.AnimeSeries.Save(validSeries, false, true);
+            RepoFactory.AnimeSeries.Save(noGroupSeries, false, true);
+            RepoFactory.AnimeSeries.Save(danglingGroupSeries, false, true);
+
+            RepoFactory.AnimeGroup.Populate();
+            RepoFactory.AnimeSeries.Populate();
+            RepoFactory.AnimeSeries.RegenerateDb();
+
+            var refreshedValidSeries = RepoFactory.AnimeSeries.GetByID(validSeries.AnimeSeriesID);
+            var refreshedNoGroupSeries = RepoFactory.AnimeSeries.GetByID(noGroupSeries.AnimeSeriesID);
+            var refreshedDanglingGroupSeries = RepoFactory.AnimeSeries.GetByID(danglingGroupSeries.AnimeSeriesID);
+
+            Assert.NotNull(refreshedValidSeries);
+            Assert.NotNull(refreshedNoGroupSeries);
+            Assert.NotNull(refreshedDanglingGroupSeries);
+
+            Assert.Equal(validGroup.AnimeGroupID, refreshedValidSeries.AnimeGroupID);
+            Assert.True(refreshedNoGroupSeries.AnimeGroupID > 0);
+            Assert.True(refreshedDanglingGroupSeries.AnimeGroupID > 0);
+            Assert.NotNull(RepoFactory.AnimeGroup.GetByID(refreshedNoGroupSeries.AnimeGroupID));
+            Assert.NotNull(RepoFactory.AnimeGroup.GetByID(refreshedDanglingGroupSeries.AnimeGroupID));
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+            var persistedValidSeries = context.AnimeSeries.AsNoTracking().Single(a => a.AnimeSeriesID == validSeries.AnimeSeriesID);
+            var persistedNoGroupSeries = context.AnimeSeries.AsNoTracking().Single(a => a.AnimeSeriesID == noGroupSeries.AnimeSeriesID);
+            var persistedDanglingGroupSeries = context.AnimeSeries.AsNoTracking().Single(a => a.AnimeSeriesID == danglingGroupSeries.AnimeSeriesID);
+
+            Assert.Equal(validGroup.AnimeGroupID, persistedValidSeries.AnimeGroupID);
+            Assert.Equal(refreshedNoGroupSeries.AnimeGroupID, persistedNoGroupSeries.AnimeGroupID);
+            Assert.Equal(refreshedDanglingGroupSeries.AnimeGroupID, persistedDanglingGroupSeries.AnimeGroupID);
+        }
+        finally
+        {
+            SQLite.UseEfOnlyBootstrapForTests = false;
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
