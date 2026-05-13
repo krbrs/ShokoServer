@@ -34,7 +34,7 @@ public class SQLiteEfOnlyBootstrapTests
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
 
-            var firstHost = await StartServiceAsync();
+            var firstHost = await StartServiceAsync(waitForStartupComplete: true);
             try
             {
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
@@ -55,7 +55,7 @@ public class SQLiteEfOnlyBootstrapTests
                 await firstHost.StopAsync(TimeSpan.FromSeconds(30));
             }
 
-            var secondHost = await StartServiceAsync();
+            var secondHost = await StartServiceAsync(waitForStartupComplete: true);
             try
             {
                 Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
@@ -78,7 +78,13 @@ public class SQLiteEfOnlyBootstrapTests
         }
     }
 
-    private static async Task<IHost> StartServiceAsync()
+    private static async Task<IHost> StartServiceAsync(bool waitForStartupComplete = false)
+    {
+        var (host, _, _) = await StartServiceUntilAboutToStartAsync(waitForStartupComplete);
+        return host;
+    }
+
+    private static async Task<(IHost Host, SystemService SystemService, TaskCompletionSource AboutToStart)> StartServiceUntilAboutToStartAsync(bool waitForStartupComplete = false)
     {
         var systemService = new SystemService();
         var settings = Utils.SettingsProvider.GetSettings();
@@ -99,13 +105,21 @@ public class SQLiteEfOnlyBootstrapTests
         try
         {
             await aboutToStart.Task.WaitAsync(TimeSpan.FromMinutes(10));
+            if (waitForStartupComplete)
+                await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException(systemService.StartupFailedException?.ToString() ?? ex.ToString(), ex);
+            var startupFailure = systemService.StartupFailedException;
+            var failureText = startupFailure?.ToString();
+            if (startupFailure?.InnerException is not null)
+                failureText += Environment.NewLine + startupFailure.InnerException;
+            if (startupFailure?.InnerException?.InnerException is not null)
+                failureText += Environment.NewLine + startupFailure.InnerException.InnerException;
+            throw new InvalidOperationException(failureText ?? ex.ToString(), ex);
         }
 
-        return host!;
+        return (host!, systemService, aboutToStart);
     }
 
     private static ushort GetAvailableTcpPort()

@@ -159,7 +159,7 @@ public class ThreadPooledJobStore : JobStoreTX
 
     private void FilterOnStateChanged(object? sender, EventArgs e)
     {
-        SignalSchedulingChangeImmediately(new DateTimeOffset(1982, 6, 28, 0, 0, 0, TimeSpan.Zero));
+        TrySignalSchedulingChangeImmediately();
     }
 
     private void OnProvidersReady(object? sender, EventArgs e)
@@ -213,7 +213,7 @@ public class ThreadPooledJobStore : JobStoreTX
             _cacheReadWriteLock.ExitWriteLock();
         }
 
-        SignalSchedulingChangeImmediately(new DateTimeOffset(1982, 6, 28, 0, 0, 0, TimeSpan.Zero));
+        TrySignalSchedulingChangeImmediately();
     }
 
     #endregion
@@ -878,9 +878,21 @@ public class ThreadPooledJobStore : JobStoreTX
             }), cancellationToken).ConfigureAwait(false);
 
         // this will prevent the idle waiting that exists to prevent constantly checking if it's time to trigger a schedule
-        if (waitingTriggerCount > 0) SignalSchedulingChangeImmediately(new DateTimeOffset(1982, 6, 28, 0, 0, 0, TimeSpan.Zero));
+        if (waitingTriggerCount > 0) TrySignalSchedulingChangeImmediately();
         stopwatch.Stop();
         _logger.LogTrace("OnJobCompleted took {Time:0.####}ms", stopwatch.ElapsedTicks / 10000D);
+    }
+
+    private void TrySignalSchedulingChangeImmediately()
+    {
+        try
+        {
+            SignalSchedulingChangeImmediately(new DateTimeOffset(1982, 6, 28, 0, 0, 0, TimeSpan.Zero));
+        }
+        catch (NullReferenceException ex)
+        {
+            _logger.LogDebug(ex, "Skipping scheduling change signal because the Quartz scheduler is not ready yet.");
+        }
     }
 
     private readonly SemaphoreSlim _jobStateLock = new(1, 1);
