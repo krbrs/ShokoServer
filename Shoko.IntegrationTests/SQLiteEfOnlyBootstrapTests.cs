@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -351,6 +352,139 @@ public class SQLiteEfOnlyBootstrapTests
 
                 Assert.True(hashReached, "Expected the existing-db RunOnStart path to reach or observe the hash stage.");
                 Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+            }
+            finally
+            {
+                queueStateEventHandler.QueueItemsAdded -= onQueueItemsAdded;
+                queueStateEventHandler.ExecutingJobsChanged -= onQueueChanged;
+                await host.StopAsync(TimeSpan.FromSeconds(30));
+            }
+        }
+        finally
+        {
+            SQLite.ResetTestState();
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            RepoFactory.ResetTestCounters();
+            Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
+            await DeleteDirectoryWithRetriesAsync(tempDir);
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"shoko-efonly-existing-validvideo-{Guid.NewGuid():N}");
+        var importDir = Path.Combine(tempDir, "import");
+        Directory.CreateDirectory(importDir);
+        var relativePath = "existing-runtime-processchain.mp4";
+        var absolutePath = Path.Combine(importDir, relativePath);
+        await WriteTinyValidVideoFixtureAsync(absolutePath);
+
+        var originalShokoHome = Environment.GetEnvironmentVariable("SHOKO_HOME");
+        try
+        {
+            Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
+            var databasePath = GetExpectedSqliteDatabasePath(tempDir);
+            CopyExistingSqliteFixtureDatabase(databasePath);
+            Assert.False(await EfMigrationsHistoryExistsAsync(databasePath), "Expected the existing SQLite fixture to be pre-EF and have no __EFMigrationsHistory table.");
+
+            SQLite.UseEfOnlyBootstrapForTests = true;
+            SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+
+            var seedHost = await StartServiceAsync(waitForStartupComplete: true);
+            int folderId;
+            try
+            {
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+
+                foreach (var existingFolder in RepoFactory.ShokoManagedFolder.GetAll())
+                {
+                    if (!existingFolder.IsWatched)
+                        continue;
+
+                    existingFolder.IsWatched = false;
+                    RepoFactory.ShokoManagedFolder.Save(existingFolder);
+                }
+
+                var folder = new ShokoManagedFolder
+                {
+                    Name = $"ExistingRuntimeValid-{Guid.NewGuid():N}",
+                    Path = importDir,
+                    IsWatched = true
+                };
+                RepoFactory.ShokoManagedFolder.Save(folder);
+                folderId = folder.ID;
+            }
+            finally
+            {
+                await seedHost.StopAsync(TimeSpan.FromSeconds(30));
+            }
+
+            Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
+            Assert.True(await EfMigrationsHistoryContainsMigrationAsync(databasePath, "20260509114039_InitialCreate"), "Expected the baseline migration row to persist after the first existing-db startup.");
+
+            SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+
+            var (host, systemService, _) = await StartServiceUntilAboutToStartAsync(
+                waitForStartupComplete: false,
+                configureSettings: settings =>
+                {
+                    settings.Import.RunOnStart = true;
+                    settings.Import.ScanDropFoldersOnStart = false;
+                    settings.Import.FileLockChecking = false;
+                    settings.Import.AggressiveFileLockChecking = false;
+                });
+
+            var queueStateEventHandler = Utils.ServiceContainer.GetRequiredService<QueueStateEventHandler>();
+            var observedHashJobForFile = false;
+            var observedProcessItems = new ConcurrentBag<Shoko.Server.Scheduling.QueueItem>();
+            EventHandler<QueueItemsAddedEventArgs> onQueueItemsAdded = (_, e) =>
+            {
+                foreach (var item in e.AddedItems)
+                {
+                    observedHashJobForFile |= IsHashJobForFile(item, relativePath);
+                    if (string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal))
+                        observedProcessItems.Add(item);
+                }
+            };
+            EventHandler<QueueChangedEventArgs> onQueueChanged = (_, e) =>
+            {
+                foreach (var item in e.AddedItems)
+                {
+                    observedHashJobForFile |= IsHashJobForFile(item, relativePath);
+                    if (string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal))
+                        observedProcessItems.Add(item);
+                }
+
+                foreach (var item in e.ExecutingItems)
+                {
+                    observedHashJobForFile |= IsHashJobForFile(item, relativePath);
+                    if (string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal))
+                        observedProcessItems.Add(item);
+                }
+            };
+            queueStateEventHandler.QueueItemsAdded += onQueueItemsAdded;
+            queueStateEventHandler.ExecutingJobsChanged += onQueueChanged;
+
+            try
+            {
+                await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
+                var (videoLocalId, processJobScheduled) = await WaitForHashedVideoOrNhTouchAsync(folderId, relativePath, TimeSpan.FromSeconds(90));
+
+                Assert.True(videoLocalId > 0);
+                Assert.True(observedHashJobForFile, "Expected the specific HashFileJob to be observed for the valid upgraded-db runtime file.");
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+
+                var reachedProcessBoundary = processJobScheduled || await WaitForProcessJobBoundaryOrObservedAsync(
+                    videoLocalId,
+                    relativePath,
+                    () => observedProcessItems.Any(item => IsProcessJobForFileOrVideo(item, relativePath, videoLocalId)),
+                    TimeSpan.FromSeconds(30));
+                Assert.True(reachedProcessBoundary, "Expected the valid upgraded-db runtime file to reach ProcessFileJob scheduling or execution.");
             }
             finally
             {
@@ -768,6 +902,25 @@ public class SQLiteEfOnlyBootstrapTests
         return filePath.Contains(relativePath, StringComparison.Ordinal);
     }
 
+    private static bool IsProcessJobForFile(Shoko.Server.Scheduling.QueueItem item, string relativePath)
+    {
+        if (!string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal))
+            return false;
+
+        if (!item.Details.TryGetValue("File Path", out var filePathObj) || filePathObj is not string filePath)
+            return false;
+
+        return filePath.Contains(relativePath, StringComparison.Ordinal);
+    }
+
+    private static bool IsProcessJobForFileOrVideo(Shoko.Server.Scheduling.QueueItem item, string relativePath, int videoLocalId)
+    {
+        if (IsProcessJobForFile(item, relativePath))
+            return true;
+
+        return item.Details.TryGetValue("Video", out var videoObj) && videoObj is int queuedVideoId && queuedVideoId == videoLocalId;
+    }
+
     private static async Task<bool> WaitForHashBoundaryOrObservedAsync(string absolutePath, Func<bool> hashObserved, TimeSpan timeout)
     {
         using var cancellationTokenSource = new CancellationTokenSource(timeout);
@@ -793,6 +946,44 @@ public class SQLiteEfOnlyBootstrapTests
 
                 var executingJobs = await scheduler.GetCurrentlyExecutingJobs(cancellationTokenSource.Token);
                 if (executingJobs.Any(job => job.JobDetail.Key.Equals(hashFileJobKey)))
+                    return true;
+            }
+
+            cancellationTokenSource.Token.ThrowIfCancellationRequested();
+            await Task.Delay(250, cancellationTokenSource.Token);
+        }
+    }
+
+    private static async Task<bool> WaitForProcessJobBoundaryOrObservedAsync(int videoLocalId, string relativePath, Func<bool> processObserved, TimeSpan timeout)
+    {
+        using var cancellationTokenSource = new CancellationTokenSource(timeout);
+        while (true)
+        {
+            if (SQLite.SessionFactoryCreateCallCount > 0)
+                return false;
+
+            if (processObserved())
+                return true;
+
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var schedulerFactory = scope.ServiceProvider.GetRequiredService<ISchedulerFactory>();
+                var scheduler = await schedulerFactory.GetScheduler(cancellationTokenSource.Token);
+                var processFileJobKey = JobKeyBuilder<ProcessFileJob>.Create()
+                    .WithGroup(JobKeyGroup.Import)
+                    .UsingJobData(job => (job.VideoLocalID, job.ForceRecheck, job.ShouldRelocate) = (videoLocalId, true, false))
+                    .Build();
+
+                if (await scheduler.CheckExists(processFileJobKey, cancellationTokenSource.Token))
+                    return true;
+
+                var executingJobs = await scheduler.GetCurrentlyExecutingJobs(cancellationTokenSource.Token);
+                if (executingJobs.Any(job => job.JobDetail.Key.Equals(processFileJobKey)))
+                    return true;
+
+                if (executingJobs.Any(job => string.Equals(job.JobDetail.Key.Group, JobKeyGroup.Import, StringComparison.Ordinal) &&
+                                             job.JobDetail.JobDataMap.TryGetValue(nameof(ProcessFileJob.VideoLocalID), out var queuedVideoIdObj) &&
+                                             Convert.ToInt32(queuedVideoIdObj) == videoLocalId))
                     return true;
             }
 
@@ -841,6 +1032,37 @@ public class SQLiteEfOnlyBootstrapTests
         command.CommandText = "SELECT COUNT(*) FROM __EFMigrationsHistory WHERE MigrationId = $migrationId";
         command.Parameters.AddWithValue("$migrationId", migrationId);
         return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private static Task WriteTinyValidVideoFixtureAsync(string path)
+    {
+        var bytes = Convert.FromBase64String(string.Concat(
+            "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAARlbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAA",
+            "AAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAA490cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAAB",
+            "AAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAA",
+            "AAEAAAPoAAAEAAABAAAAAAMHbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAMgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRl",
+            "b0hhbmRsZXIAAAACsm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAnJzdGJsAAAAvnN0c2QA",
+            "AAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDEgbGlieDI2NAAAAAAAAAAAAAAA",
+            "GP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAACBoAAAA",
+            "AAAAABhzdHRzAAAAAAAAAAEAAAAZAAACAAAAABRzdHNzAAAAAAAAAAEAAAABAAAA2GN0dHMAAAAAAAAAGQAAAAEAAAQAAAAAAQAACgAAAAABAAAEAAAAAAEA",
+            "AAAAAAAAAQAAAgAAAAABAAAKAAAAAAEAAAQAAAAAAQAAAAAAAAABAAACAAAAAAEAAAoAAAAAAQAABAAAAAABAAAAAAAAAAEAAAIAAAAAAQAACgAAAAABAAAE",
+            "AAAAAAEAAAAAAAAAAQAAAgAAAAABAAAKAAAAAAEAAAQAAAAAAQAAAAAAAAABAAACAAAAAAEAAAoAAAAAAQAABAAAAAABAAAAAAAAAAEAAAIAAAAAHHN0c2MA",
+            "AAAAAAAAAQAAAAEAAAAZAAAAAQAAAHhzdHN6AAAAAAAAAAAAAAAZAAACxQAAAAwAAAAMAAAADAAAAAwAAAASAAAADgAAAAwAAAAMAAAAEgAAAA4AAAAMAAAA",
+            "DAAAABIAAAAOAAAADAAAAAwAAAASAAAADgAAAAwAAAAMAAAAEgAAAA4AAAAMAAAADAAAABRzdGNvAAAAAAAAAAEAAASVAAAAYnVkdGEAAABabWV0YQAAAAAA",
+            "AAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDEAAAAIZnJlZQAABBVt",
+            "ZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHls",
+            "ZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBh",
+            "bmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0x",
+            "IHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2Fo",
+            "ZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2lu",
+            "dHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5",
+            "aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4w",
+            "IHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAA7//73Tr8Cm1TCYQAAAAhBmiRs",
+            "Q7/+4AAAAAhBnkJ4hf/BgQAAAAgBnmF0Qr/EgAAAAAgBnmNqQr/EgQAAAA5BmmhJqEFomUwId//+4QAAAApBnoZFESwv/8GBAAAACAGepXRCv8SBAAAACAGe",
+            "p2pCv8SAAAAADkGarEmoQWyZTAh3//7gAAAACkGeykUVLC//wYEAAAAIAZ7pdEK/xIAAAAAIAZ7rakK/xIAAAAAOQZrwSahBbJlMCG///uEAAAAKQZ8ORRUs",
+            "L//BgQAAAAgBny10Qr/EgQAAAAgBny9qQr/EgAAAAA5BmzRJqEFsmUwIZ//+4AAAAApBn1JFFSwv/8GBAAAACAGfcXRCv8SAAAAACAGfc2pCv8SAAAAADkGb",
+            "eEmoQWyZTAhX//7BAAAACkGflkUVLC//wYAAAAAIAZ+1dEK/xIEAAAAIAZ+3akK/xIE="));
+        return File.WriteAllBytesAsync(path, bytes);
     }
 
     private static async Task DeleteDirectoryWithRetriesAsync(string path)
