@@ -24,8 +24,7 @@ public class TMDB_Company_EntityConfiguration : IEntityTypeConfiguration<TMDB_Co
             .IsRequired();
 
         builder.Property(x => x.TmdbEntityType)
-            .IsRequired()
-            .HasConversion<byte>();
+            .IsRequired();
 
         builder.Property(x => x.TmdbEntityID)
             .IsRequired();

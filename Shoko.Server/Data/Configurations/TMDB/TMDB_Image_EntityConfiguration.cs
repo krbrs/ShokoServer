@@ -28,8 +28,7 @@ public class TMDB_Image_EntityConfiguration : IEntityTypeConfiguration<TMDB_Imag
             .HasConversion<byte>();
 
         builder.Property(x => x.TmdbEntityType)
-            .IsRequired()
-            .HasConversion<byte>();
+            .IsRequired();
 
         builder.Property(x => x.TmdbEntityID)
             .IsRequired();

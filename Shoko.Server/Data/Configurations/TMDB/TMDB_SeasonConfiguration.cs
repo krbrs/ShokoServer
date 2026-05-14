@@ -25,7 +25,8 @@ public class TMDB_SeasonConfiguration : IEntityTypeConfiguration<TMDB_Season>
         builder.Property(x => x.TmdbSeasonID)
             .IsRequired();
 
-        builder.Property(x => x.PosterPath);
+        builder.Property(x => x.PosterPath)
+            .IsRequired(false);
 
         builder.Property(x => x.EnglishTitle)
             .IsRequired();

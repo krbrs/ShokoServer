@@ -49,7 +49,7 @@ public class TMDB_Season : TMDB_Base<int>, IEntityMetadata, IMetadata<int>, ITmd
     /// <summary>
     /// The default poster path. Used to determine the default poster for the show.
     /// </summary>
-    public string PosterPath { get; set; } = string.Empty;
+    public string? PosterPath { get; set; }
 
     /// <summary>
     /// The english title of the season, used as a fallback for when no title
@@ -127,7 +127,7 @@ public class TMDB_Season : TMDB_Base<int>, IEntityMetadata, IMetadata<int>, ITmd
         {
             UpdateProperty(TmdbSeasonID, season.Id!.Value, v => TmdbSeasonID = v),
             UpdateProperty(TmdbShowID, show.Id, v => TmdbShowID = v),
-            UpdateProperty(PosterPath, season.PosterPath!, v => PosterPath = v),
+            UpdateProperty(PosterPath, season.PosterPath, v => PosterPath = v),
             UpdateProperty(EnglishTitle, !string.IsNullOrEmpty(translation?.Data?.Name) ? translation.Data.Name : season.Name!, v => EnglishTitle = v),
             UpdateProperty(EnglishOverview, !string.IsNullOrEmpty(translation?.Data?.Overview) ? translation.Data.Overview : season.Overview!, v => EnglishOverview = v),
             UpdateProperty(SeasonNumber, season.SeasonNumber, v => SeasonNumber = v),
@@ -211,7 +211,9 @@ public class TMDB_Season : TMDB_Base<int>, IEntityMetadata, IMetadata<int>, ITmd
         ? _allOverviews = RepoFactory.TMDB_Overview.GetByParentTypeAndID(ForeignEntityType.Season, TmdbSeasonID)
         : _allOverviews ??= RepoFactory.TMDB_Overview.GetByParentTypeAndID(ForeignEntityType.Season, TmdbSeasonID);
 
-    public TMDB_Image? DefaultPoster => RepoFactory.TMDB_Image.GetByRemoteFileName(PosterPath)?.GetImageMetadata(true, ImageEntityType.Poster);
+    public TMDB_Image? DefaultPoster => !string.IsNullOrEmpty(PosterPath)
+        ? RepoFactory.TMDB_Image.GetByRemoteFileName(PosterPath)?.GetImageMetadata(true, ImageEntityType.Poster)
+        : null;
 
     /// <summary>
     /// Get all images for the season, or all images for the given

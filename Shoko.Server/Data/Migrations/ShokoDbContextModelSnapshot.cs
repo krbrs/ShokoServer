@@ -1920,7 +1920,7 @@ namespace Shoko.Server.Data.Migrations
                     b.Property<int>("TmdbEntityID")
                         .HasColumnType("INTEGER");
 
-                    b.Property<byte>("TmdbEntityType")
+                    b.Property<int>("TmdbEntityType")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("TMDB_Company_EntityID");
@@ -1965,7 +1965,6 @@ namespace Shoko.Server.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("ThumbnailPath")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("TmdbEpisodeID")
@@ -2119,7 +2118,7 @@ namespace Shoko.Server.Data.Migrations
                     b.Property<int>("TmdbEntityID")
                         .HasColumnType("INTEGER");
 
-                    b.Property<byte>("TmdbEntityType")
+                    b.Property<int>("TmdbEntityType")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("TMDB_Image_EntityID");
@@ -2134,7 +2133,6 @@ namespace Shoko.Server.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("BackdropPath")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ContentRatings")
@@ -2181,7 +2179,6 @@ namespace Shoko.Server.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PosterPath")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ProductionCountries")
@@ -2400,7 +2397,6 @@ namespace Shoko.Server.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PosterPath")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SeasonNumber")
@@ -2427,7 +2423,6 @@ namespace Shoko.Server.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("BackdropPath")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ContentRatings")
@@ -2480,7 +2475,6 @@ namespace Shoko.Server.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PosterPath")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PreferredAlternateOrderingID")

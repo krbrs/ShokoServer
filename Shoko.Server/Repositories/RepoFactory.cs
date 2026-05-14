@@ -28,6 +28,12 @@ public class RepoFactory
     internal static int EfOnlyPopulateSessionCount { get; private set; }
     internal static int EfOnlySkippedRepairPassCount { get; private set; }
 
+    internal static void ResetTestCounters()
+    {
+        EfOnlyPopulateSessionCount = 0;
+        EfOnlySkippedRepairPassCount = 0;
+    }
+
     public static AniDB_Anime_CharacterRepository AniDB_Anime_Character;
     public static AniDB_Anime_Character_CreatorRepository AniDB_Anime_Character_Creator;
     public static AniDB_Anime_PreferredImageRepository AniDB_Anime_PreferredImage;

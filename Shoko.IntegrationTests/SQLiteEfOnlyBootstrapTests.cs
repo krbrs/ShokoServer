@@ -1,9 +1,11 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,6 +18,7 @@ using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
 using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.GenericJobBuilder;
+using Shoko.Server.Scheduling.Jobs;
 using Shoko.Server.Scheduling.Jobs.Shoko;
 using Shoko.Server.Services;
 using Shoko.Server.Utilities;
@@ -41,6 +44,7 @@ public class SQLiteEfOnlyBootstrapTests
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
             SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
             Assert.Equal(0, RepoFactory.EfOnlyPopulateSessionCount);
             Assert.Equal(0, RepoFactory.EfOnlySkippedRepairPassCount);
@@ -70,6 +74,7 @@ public class SQLiteEfOnlyBootstrapTests
                 await firstHost.StopAsync(TimeSpan.FromSeconds(30));
             }
 
+            RepoFactory.ResetTestCounters();
             var secondHost = await StartServiceAsync(waitForStartupComplete: true);
             try
             {
@@ -90,9 +95,271 @@ public class SQLiteEfOnlyBootstrapTests
         {
             SQLite.ResetTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
+            RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
 
             if (succeeded && Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_EfOnlyBootstrap_ExistingDatabase_BaselinedStartup_SurvivesRestart_WithoutNhSessionFactory()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"shoko-efonly-existing-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var succeeded = false;
+
+        var originalShokoHome = Environment.GetEnvironmentVariable("SHOKO_HOME");
+        try
+        {
+            Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
+            var databasePath = GetExpectedSqliteDatabasePath(tempDir);
+            CopyExistingSqliteFixtureDatabase(databasePath);
+            Assert.True(File.Exists(databasePath), $"Expected existing SQLite fixture database at '{databasePath}'.");
+            Assert.False(await EfMigrationsHistoryExistsAsync(databasePath), "Expected the existing SQLite fixture to be pre-EF and have no __EFMigrationsHistory table.");
+
+            SQLite.UseEfOnlyBootstrapForTests = true;
+            SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+            Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+            Assert.Equal(0, RepoFactory.EfOnlyPopulateSessionCount);
+            Assert.Equal(0, RepoFactory.EfOnlySkippedRepairPassCount);
+
+            var firstHost = await StartServiceAsync(waitForStartupComplete: true);
+            try
+            {
+                Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
+                Assert.Equal(0, RepoFactory.EfOnlySkippedRepairPassCount);
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+                Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
+                Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
+
+                using var scope = Utils.ServiceContainer.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                var activationService = new EfStartupActivationService(context);
+                var activationResult = await activationService.ActivateAsync();
+
+                Assert.True(activationResult.Success, string.Join(Environment.NewLine, activationResult.Errors));
+                Assert.NotNull(activationResult.BaselineRegistration);
+                Assert.True(activationResult.BaselineRegistration!.Success, string.Join(Environment.NewLine, activationResult.BaselineRegistration.Errors));
+                Assert.Equal(activationResult.BaselineMigrationId, activationResult.BaselineRegistration.RegisteredMigrationId);
+                Assert.Empty(activationResult.AppliedMigrations);
+            }
+            finally
+            {
+                await firstHost.StopAsync(TimeSpan.FromSeconds(30));
+            }
+
+            Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after EF-only startup activation.");
+
+            SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+
+            var secondHost = await StartServiceAsync(waitForStartupComplete: true);
+            try
+            {
+                Assert.True(RepoFactory.EfOnlyPopulateSessionCount > 0);
+                Assert.Equal(0, RepoFactory.EfOnlySkippedRepairPassCount);
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+                Assert.NotNull(RepoFactory.JMMUser.GetByUsername("Default"));
+                Assert.NotEmpty(RepoFactory.FilterPreset.GetAll());
+            }
+            finally
+            {
+                await secondHost.StopAsync(TimeSpan.FromSeconds(30));
+            }
+
+            succeeded = true;
+        }
+        finally
+        {
+            SQLite.ResetTestState();
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            RepoFactory.ResetTestCounters();
+            Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
+
+            if (succeeded && Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_ExistingFixture_TmdbEpisodeWithNullThumbnail_MaterializesWithEf()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"shoko-existing-fixture-materialize-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var databasePath = GetExpectedSqliteDatabasePath(tempDir);
+            CopyExistingSqliteFixtureDatabase(databasePath);
+
+            var optionsBuilder = new DbContextOptionsBuilder<ShokoDbContext>();
+            optionsBuilder.UseSqlite($"Data Source={databasePath}");
+
+            await using var context = new ShokoDbContext(optionsBuilder.Options);
+            var episode = await context.TMDB_Episode
+                .AsNoTracking()
+                .Where(entry => entry.ThumbnailPath == null)
+                .OrderBy(entry => entry.TMDB_EpisodeID)
+                .FirstOrDefaultAsync();
+
+            Assert.NotNull(episode);
+            Assert.Null(episode!.ThumbnailPath);
+            Assert.False(string.IsNullOrEmpty(episode.EnglishTitle));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_ExistingFixture_TmdbImageEntityWithPersonType_MaterializesWithEf()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"shoko-existing-image-entity-materialize-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var databasePath = GetExpectedSqliteDatabasePath(tempDir);
+            CopyExistingSqliteFixtureDatabase(databasePath);
+
+            var optionsBuilder = new DbContextOptionsBuilder<ShokoDbContext>();
+            optionsBuilder.UseSqlite($"Data Source={databasePath}");
+
+            await using var context = new ShokoDbContext(optionsBuilder.Options);
+            var imageEntity = await context.TMDB_Image_Entity
+                .AsNoTracking()
+                .Where(entry => entry.TmdbEntityType == Shoko.Server.Server.ForeignEntityType.Person)
+                .OrderBy(entry => entry.TMDB_Image_EntityID)
+                .FirstOrDefaultAsync();
+
+            Assert.NotNull(imageEntity);
+            Assert.Equal(Shoko.Server.Server.ForeignEntityType.Person, imageEntity!.TmdbEntityType);
+            Assert.False(string.IsNullOrEmpty(imageEntity.RemoteFileName));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"shoko-efonly-existing-runonstart-{Guid.NewGuid():N}");
+        var importDir = Path.Combine(tempDir, "import");
+        Directory.CreateDirectory(importDir);
+        var relativePath = "existing-runtime-hashchain.mkv";
+        await File.WriteAllBytesAsync(Path.Combine(importDir, relativePath), new byte[4096]);
+
+        var originalShokoHome = Environment.GetEnvironmentVariable("SHOKO_HOME");
+        try
+        {
+            Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
+            var databasePath = GetExpectedSqliteDatabasePath(tempDir);
+            CopyExistingSqliteFixtureDatabase(databasePath);
+            Assert.False(await EfMigrationsHistoryExistsAsync(databasePath), "Expected the existing SQLite fixture to be pre-EF and have no __EFMigrationsHistory table.");
+
+            SQLite.UseEfOnlyBootstrapForTests = true;
+            SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+
+            var seedHost = await StartServiceAsync(waitForStartupComplete: true);
+            int folderId;
+            try
+            {
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+
+                var folder = new ShokoManagedFolder
+                {
+                    Name = $"ExistingRuntime-{Guid.NewGuid():N}",
+                    Path = importDir,
+                    IsWatched = true
+                };
+                RepoFactory.ShokoManagedFolder.Save(folder);
+                folderId = folder.ID;
+            }
+            finally
+            {
+                await seedHost.StopAsync(TimeSpan.FromSeconds(30));
+            }
+
+            SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+
+            var (host, systemService, _) = await StartServiceUntilAboutToStartAsync(
+                waitForStartupComplete: false,
+                configureSettings: settings =>
+                {
+                    settings.Import.RunOnStart = true;
+                    settings.Import.ScanDropFoldersOnStart = false;
+                    settings.Import.FileLockChecking = false;
+                    settings.Import.AggressiveFileLockChecking = false;
+                });
+
+            var queueStateEventHandler = Utils.ServiceContainer.GetRequiredService<QueueStateEventHandler>();
+            var observedHashJob = false;
+            var observedProcessJob = false;
+            EventHandler<QueueItemsAddedEventArgs> onQueueItemsAdded = (_, e) =>
+            {
+                foreach (var item in e.AddedItems)
+                {
+                    observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
+                    observedProcessJob |= string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal);
+                }
+            };
+            EventHandler<QueueChangedEventArgs> onQueueChanged = (_, e) =>
+            {
+                foreach (var item in e.AddedItems)
+                {
+                    observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
+                    observedProcessJob |= string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal);
+                }
+
+                foreach (var item in e.ExecutingItems)
+                {
+                    observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
+                    observedProcessJob |= string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal);
+                }
+            };
+            queueStateEventHandler.QueueItemsAdded += onQueueItemsAdded;
+            queueStateEventHandler.ExecutingJobsChanged += onQueueChanged;
+
+            try
+            {
+                await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
+                var (videoLocalId, processJobScheduled) = await WaitForHashedVideoOrNhTouchAsync(folderId, relativePath, TimeSpan.FromSeconds(90));
+
+                Assert.True(videoLocalId > 0);
+                Assert.True(observedHashJob, "Expected HashFileJob to be observed during existing-db RunOnStart import.");
+                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+
+                observedProcessJob |= processJobScheduled;
+                Assert.True(observedProcessJob, "Expected ProcessFileJob scheduling to be observed after hashing on the existing-db path.");
+            }
+            finally
+            {
+                queueStateEventHandler.QueueItemsAdded -= onQueueItemsAdded;
+                queueStateEventHandler.ExecutingJobsChanged -= onQueueChanged;
+                await host.StopAsync(TimeSpan.FromSeconds(30));
+            }
+        }
+        finally
+        {
+            SQLite.ResetTestState();
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            RepoFactory.ResetTestCounters();
+            Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
+            if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, recursive: true);
         }
     }
@@ -112,6 +379,7 @@ public class SQLiteEfOnlyBootstrapTests
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
             SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             var seedHost = await StartServiceAsync(waitForStartupComplete: true);
@@ -158,6 +426,7 @@ public class SQLiteEfOnlyBootstrapTests
         {
             SQLite.ResetTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
+            RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, recursive: true);
@@ -179,6 +448,7 @@ public class SQLiteEfOnlyBootstrapTests
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
             SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             var seedHost = await StartServiceAsync(waitForStartupComplete: true);
@@ -226,6 +496,7 @@ public class SQLiteEfOnlyBootstrapTests
         {
             SQLite.ResetTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
+            RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, recursive: true);
@@ -247,6 +518,7 @@ public class SQLiteEfOnlyBootstrapTests
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
             SQLite.ResetTestState();
+            RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             var seedHost = await StartServiceAsync(waitForStartupComplete: true);
@@ -331,6 +603,7 @@ public class SQLiteEfOnlyBootstrapTests
         {
             SQLite.ResetTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
+            RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, recursive: true);
@@ -359,14 +632,30 @@ public class SQLiteEfOnlyBootstrapTests
         Utils.SettingsProvider.SaveSettings(settings);
 
         var aboutToStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startupFailed = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
         systemService.AboutToStart += (_, _) => aboutToStart.TrySetResult();
+        systemService.StartupFailed += (_, args) => startupFailed.TrySetResult(args.Exception);
 
         var host = await systemService.StartAsync();
         Assert.NotNull(host);
 
         try
         {
-            await aboutToStart.Task.WaitAsync(TimeSpan.FromMinutes(10));
+            var completedTask = await Task.WhenAny(
+                aboutToStart.Task,
+                startupFailed.Task,
+                Task.Delay(TimeSpan.FromMinutes(10)));
+
+            if (completedTask == startupFailed.Task)
+            {
+                throw startupFailed.Task.Result ?? new InvalidOperationException("Startup failed before reaching AboutToStart.");
+            }
+
+            if (completedTask != aboutToStart.Task)
+            {
+                throw new TimeoutException("Timed out waiting for AboutToStart.");
+            }
+
             if (waitForStartupComplete)
                 await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
         }
@@ -468,5 +757,30 @@ public class SQLiteEfOnlyBootstrapTests
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         return (ushort)((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    private static string GetExpectedSqliteDatabasePath(string shokoHome)
+        => Path.Combine(shokoHome, "SQLite", "Shoko.db3");
+
+    private static void CopyExistingSqliteFixtureDatabase(string destinationPath)
+    {
+        var testProjectDir = Path.GetDirectoryName(typeof(SQLiteEfOnlyBootstrapTests).Assembly.Location)!;
+        var solutionDir = Directory.GetParent(testProjectDir)!.Parent!.Parent!.Parent!.FullName;
+        var fixturePath = Path.Combine(solutionDir, "spec-backups", "sqlite", "Shoko.db3");
+        Assert.True(File.Exists(fixturePath), $"Expected SQLite fixture database at '{fixturePath}'.");
+
+        var destinationDirectory = Path.GetDirectoryName(destinationPath);
+        Assert.NotNull(destinationDirectory);
+        Directory.CreateDirectory(destinationDirectory);
+        File.Copy(fixturePath, destinationPath, overwrite: true);
+    }
+
+    private static async Task<bool> EfMigrationsHistoryExistsAsync(string databasePath)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '__EFMigrationsHistory'";
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
     }
 }

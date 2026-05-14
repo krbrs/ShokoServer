@@ -28,9 +28,11 @@ public class TMDB_MovieConfiguration : IEntityTypeConfiguration<TMDB_Movie>
 
         builder.Property(x => x.ImdbMovieID);
 
-        builder.Property(x => x.PosterPath);
+        builder.Property(x => x.PosterPath)
+            .IsRequired(false);
 
-        builder.Property(x => x.BackdropPath);
+        builder.Property(x => x.BackdropPath)
+            .IsRequired(false);
 
         builder.Property(x => x.EnglishTitle)
             .IsRequired();

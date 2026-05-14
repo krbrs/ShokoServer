@@ -62,13 +62,13 @@ public class TMDB_Movie : TMDB_Base<int>, IEntityMetadata, IMovie, ITmdbMovie
     /// The default poster path. Used to determine the default poster for the
     /// movie.
     /// </summary>
-    public string PosterPath { get; set; } = string.Empty;
+    public string? PosterPath { get; set; }
 
     /// <summary>
     /// The default backdrop path. Used to determine the default backdrop for
     /// the movie.
     /// </summary>
-    public string BackdropPath { get; set; } = string.Empty;
+    public string? BackdropPath { get; set; }
 
     /// <summary>
     /// The english title of the movie, used as a fallback for when no title
@@ -228,8 +228,8 @@ public class TMDB_Movie : TMDB_Base<int>, IEntityMetadata, IMovie, ITmdbMovie
             : movie.ReleaseDate;
         var updatedList = new[]
         {
-            UpdateProperty(PosterPath, movie.PosterPath!, v => PosterPath = v),
-            UpdateProperty(BackdropPath, movie.BackdropPath!, v => BackdropPath = v),
+            UpdateProperty(PosterPath, movie.PosterPath, v => PosterPath = v),
+            UpdateProperty(BackdropPath, movie.BackdropPath, v => BackdropPath = v),
             UpdateProperty(TmdbCollectionID, movie.BelongsToCollection?.Id, v => TmdbCollectionID = v),
             UpdateProperty(EnglishTitle, !string.IsNullOrEmpty(translation?.Data?.Name) ? translation.Data.Name : movie.Title!, v => EnglishTitle = v),
             UpdateProperty(EnglishOverview, !string.IsNullOrEmpty(translation?.Data?.Overview) ? translation.Data.Overview : movie.Overview!, v => EnglishOverview = v),
@@ -354,9 +354,13 @@ public class TMDB_Movie : TMDB_Base<int>, IEntityMetadata, IMovie, ITmdbMovie
         ? _allOverviews = RepoFactory.TMDB_Overview.GetByParentTypeAndID(ForeignEntityType.Movie, TmdbMovieID)
         : _allOverviews ??= RepoFactory.TMDB_Overview.GetByParentTypeAndID(ForeignEntityType.Movie, TmdbMovieID);
 
-    public TMDB_Image? DefaultPoster => RepoFactory.TMDB_Image.GetByRemoteFileName(PosterPath)?.GetImageMetadata(true, ImageEntityType.Poster);
+    public TMDB_Image? DefaultPoster => !string.IsNullOrEmpty(PosterPath)
+        ? RepoFactory.TMDB_Image.GetByRemoteFileName(PosterPath)?.GetImageMetadata(true, ImageEntityType.Poster)
+        : null;
 
-    public TMDB_Image? DefaultBackdrop => RepoFactory.TMDB_Image.GetByRemoteFileName(BackdropPath)?.GetImageMetadata(true, ImageEntityType.Backdrop);
+    public TMDB_Image? DefaultBackdrop => !string.IsNullOrEmpty(BackdropPath)
+        ? RepoFactory.TMDB_Image.GetByRemoteFileName(BackdropPath)?.GetImageMetadata(true, ImageEntityType.Backdrop)
+        : null;
 
     /// <summary>
     /// Get all images for the movie, or all images for the given

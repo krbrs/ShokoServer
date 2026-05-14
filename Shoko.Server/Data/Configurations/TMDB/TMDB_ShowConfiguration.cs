@@ -26,9 +26,11 @@ public class TMDB_ShowConfiguration : IEntityTypeConfiguration<TMDB_Show>
 
         builder.Property(x => x.TvdbShowID);
 
-        builder.Property(x => x.PosterPath);
+        builder.Property(x => x.PosterPath)
+            .IsRequired(false);
 
-        builder.Property(x => x.BackdropPath);
+        builder.Property(x => x.BackdropPath)
+            .IsRequired(false);
 
         builder.Property(x => x.EnglishTitle)
             .IsRequired();

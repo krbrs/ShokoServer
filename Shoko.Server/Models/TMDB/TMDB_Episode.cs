@@ -68,7 +68,7 @@ public class TMDB_Episode : TMDB_Base<int>, IEntityMetadata, IEpisode, ITmdbEpis
     /// <summary>
     /// The default thumbnail path. Used to determine the default thumbnail for the episode.
     /// </summary>
-    public string ThumbnailPath { get; set; } = string.Empty;
+    public string? ThumbnailPath { get; set; }
 
     /// <summary>
     /// The english title of the episode, used as a fallback for when no title
@@ -179,7 +179,7 @@ public class TMDB_Episode : TMDB_Base<int>, IEntityMetadata, IEpisode, ITmdbEpis
         {
             UpdateProperty(TmdbSeasonID, season.Id!.Value!, v => TmdbSeasonID = v),
             UpdateProperty(TmdbShowID, show.Id, v => TmdbShowID = v),
-            UpdateProperty(ThumbnailPath, episode.StillPath!, v => ThumbnailPath = v),
+            UpdateProperty(ThumbnailPath, episode.StillPath, v => ThumbnailPath = v),
             // If the translations aren't provided and we have an English title, then don't update it.
             UpdateProperty(EnglishTitle, translations is null && !string.IsNullOrEmpty(EnglishTitle) ? EnglishTitle : !string.IsNullOrEmpty(translation?.Data?.Name) ? translation.Data.Name : episode.Name!, v => EnglishTitle = v),
             UpdateProperty(EnglishOverview, !string.IsNullOrEmpty(translation?.Data?.Overview) ? translation.Data.Overview : episode.Overview!, v => EnglishOverview = v),
@@ -296,7 +296,9 @@ public class TMDB_Episode : TMDB_Base<int>, IEntityMetadata, IEpisode, ITmdbEpis
         ? _allOverviews = RepoFactory.TMDB_Overview.GetByParentTypeAndID(ForeignEntityType.Episode, TmdbEpisodeID)
         : _allOverviews ??= RepoFactory.TMDB_Overview.GetByParentTypeAndID(ForeignEntityType.Episode, TmdbEpisodeID);
 
-    public TMDB_Image? DefaultThumbnail => RepoFactory.TMDB_Image.GetByRemoteFileName(ThumbnailPath)?.GetImageMetadata(true, ImageEntityType.Thumbnail);
+    public TMDB_Image? DefaultThumbnail => !string.IsNullOrEmpty(ThumbnailPath)
+        ? RepoFactory.TMDB_Image.GetByRemoteFileName(ThumbnailPath)?.GetImageMetadata(true, ImageEntityType.Thumbnail)
+        : null;
 
     /// <summary>
     /// Get all images for the episode, or all images for the given

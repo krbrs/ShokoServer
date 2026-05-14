@@ -31,7 +31,8 @@ public class TMDB_EpisodeConfiguration : IEntityTypeConfiguration<TMDB_Episode>
 
         builder.Property(x => x.TvdbEpisodeID);
 
-        builder.Property(x => x.ThumbnailPath);
+        builder.Property(x => x.ThumbnailPath)
+            .IsRequired(false);
 
         builder.Property(x => x.EnglishTitle)
             .IsRequired();
