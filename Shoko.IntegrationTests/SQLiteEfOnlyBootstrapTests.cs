@@ -257,7 +257,8 @@ public class SQLiteEfOnlyBootstrapTests
         var importDir = Path.Combine(tempDir, "import");
         Directory.CreateDirectory(importDir);
         var relativePath = "existing-runtime-hashchain.mkv";
-        await File.WriteAllBytesAsync(Path.Combine(importDir, relativePath), new byte[4096]);
+        var absolutePath = Path.Combine(importDir, relativePath);
+        await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
 
         var originalShokoHome = Environment.GetEnvironmentVariable("SHOKO_HOME");
         try
@@ -319,24 +320,24 @@ public class SQLiteEfOnlyBootstrapTests
                 });
 
             var queueStateEventHandler = Utils.ServiceContainer.GetRequiredService<QueueStateEventHandler>();
-            var observedHashJob = false;
+            var observedHashJobForFile = false;
             EventHandler<QueueItemsAddedEventArgs> onQueueItemsAdded = (_, e) =>
             {
                 foreach (var item in e.AddedItems)
                 {
-                    observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
+                    observedHashJobForFile |= IsHashJobForFile(item, relativePath);
                 }
             };
             EventHandler<QueueChangedEventArgs> onQueueChanged = (_, e) =>
             {
                 foreach (var item in e.AddedItems)
                 {
-                    observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
+                    observedHashJobForFile |= IsHashJobForFile(item, relativePath);
                 }
 
                 foreach (var item in e.ExecutingItems)
                 {
-                    observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
+                    observedHashJobForFile |= IsHashJobForFile(item, relativePath);
                 }
             };
             queueStateEventHandler.QueueItemsAdded += onQueueItemsAdded;
@@ -346,7 +347,7 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
                 await WaitForManagedFolderPlaceOrNhTouchAsync(folderId, relativePath, TimeSpan.FromSeconds(60));
-                var hashReached = await WaitForHashReadyOrObservedAsync(folderId, relativePath, () => observedHashJob, TimeSpan.FromSeconds(30));
+                var hashReached = await WaitForHashBoundaryOrObservedAsync(absolutePath, () => observedHashJobForFile, TimeSpan.FromSeconds(30));
 
                 Assert.True(hashReached, "Expected the existing-db RunOnStart path to reach or observe the hash stage.");
                 Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
@@ -756,7 +757,18 @@ public class SQLiteEfOnlyBootstrapTests
         }
     }
 
-    private static async Task<bool> WaitForHashReadyOrObservedAsync(int folderId, string relativePath, Func<bool> hashObserved, TimeSpan timeout)
+    private static bool IsHashJobForFile(Shoko.Server.Scheduling.QueueItem item, string relativePath)
+    {
+        if (!string.Equals(item.JobType, "Hash File", StringComparison.Ordinal))
+            return false;
+
+        if (!item.Details.TryGetValue("File Path", out var filePathObj) || filePathObj is not string filePath)
+            return false;
+
+        return filePath.Contains(relativePath, StringComparison.Ordinal);
+    }
+
+    private static async Task<bool> WaitForHashBoundaryOrObservedAsync(string absolutePath, Func<bool> hashObserved, TimeSpan timeout)
     {
         using var cancellationTokenSource = new CancellationTokenSource(timeout);
         while (true)
@@ -769,19 +781,19 @@ public class SQLiteEfOnlyBootstrapTests
 
             using (var scope = Utils.ServiceContainer.CreateScope())
             {
-                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
-                var place = await context.VideoLocal_Place.AsNoTracking()
-                    .Where(entry => entry.ManagedFolderID == folderId && entry.RelativePath == relativePath)
-                    .Select(entry => new { entry.VideoID })
-                    .FirstOrDefaultAsync(cancellationTokenSource.Token);
+                var schedulerFactory = scope.ServiceProvider.GetRequiredService<ISchedulerFactory>();
+                var scheduler = await schedulerFactory.GetScheduler(cancellationTokenSource.Token);
+                var hashFileJobKey = JobKeyBuilder<HashFileJob>.Create()
+                    .WithGroup(JobKeyGroup.Import)
+                    .UsingJobData(job => job.FilePath = absolutePath)
+                    .Build();
 
-                if (place is { VideoID: > 0 })
-                {
-                    var hashReady = await context.VideoLocal.AsNoTracking()
-                        .AnyAsync(video => video.VideoLocalID == place.VideoID && !string.IsNullOrEmpty(video.Hash) && video.FileSize > 0, cancellationTokenSource.Token);
-                    if (hashReady)
-                        return true;
-                }
+                if (await scheduler.CheckExists(hashFileJobKey, cancellationTokenSource.Token))
+                    return true;
+
+                var executingJobs = await scheduler.GetCurrentlyExecutingJobs(cancellationTokenSource.Token);
+                if (executingJobs.Any(job => job.JobDetail.Key.Equals(hashFileJobKey)))
+                    return true;
             }
 
             cancellationTokenSource.Token.ThrowIfCancellationRequested();
