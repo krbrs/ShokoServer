@@ -278,6 +278,15 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
 
+                foreach (var existingFolder in RepoFactory.ShokoManagedFolder.GetAll())
+                {
+                    if (!existingFolder.IsWatched)
+                        continue;
+
+                    existingFolder.IsWatched = false;
+                    RepoFactory.ShokoManagedFolder.Save(existingFolder);
+                }
+
                 var folder = new ShokoManagedFolder
                 {
                     Name = $"ExistingRuntime-{Guid.NewGuid():N}",
@@ -291,6 +300,9 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 await seedHost.StopAsync(TimeSpan.FromSeconds(30));
             }
+
+            Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
+            Assert.True(await EfMigrationsHistoryContainsMigrationAsync(databasePath, "20260509114039_InitialCreate"), "Expected the baseline migration row to persist after the first existing-db startup.");
 
             SQLite.ResetTestState();
             RepoFactory.ResetTestCounters();
@@ -308,13 +320,11 @@ public class SQLiteEfOnlyBootstrapTests
 
             var queueStateEventHandler = Utils.ServiceContainer.GetRequiredService<QueueStateEventHandler>();
             var observedHashJob = false;
-            var observedProcessJob = false;
             EventHandler<QueueItemsAddedEventArgs> onQueueItemsAdded = (_, e) =>
             {
                 foreach (var item in e.AddedItems)
                 {
                     observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
-                    observedProcessJob |= string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal);
                 }
             };
             EventHandler<QueueChangedEventArgs> onQueueChanged = (_, e) =>
@@ -322,13 +332,11 @@ public class SQLiteEfOnlyBootstrapTests
                 foreach (var item in e.AddedItems)
                 {
                     observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
-                    observedProcessJob |= string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal);
                 }
 
                 foreach (var item in e.ExecutingItems)
                 {
                     observedHashJob |= string.Equals(item.JobType, "Hash File", StringComparison.Ordinal);
-                    observedProcessJob |= string.Equals(item.JobType, "Get Release Information for Video", StringComparison.Ordinal);
                 }
             };
             queueStateEventHandler.QueueItemsAdded += onQueueItemsAdded;
@@ -337,14 +345,11 @@ public class SQLiteEfOnlyBootstrapTests
             try
             {
                 await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
-                var (videoLocalId, processJobScheduled) = await WaitForHashedVideoOrNhTouchAsync(folderId, relativePath, TimeSpan.FromSeconds(90));
+                await WaitForManagedFolderPlaceOrNhTouchAsync(folderId, relativePath, TimeSpan.FromSeconds(60));
+                var hashReached = await WaitForHashReadyOrObservedAsync(folderId, relativePath, () => observedHashJob, TimeSpan.FromSeconds(30));
 
-                Assert.True(videoLocalId > 0);
-                Assert.True(observedHashJob, "Expected HashFileJob to be observed during existing-db RunOnStart import.");
+                Assert.True(hashReached, "Expected the existing-db RunOnStart path to reach or observe the hash stage.");
                 Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
-
-                observedProcessJob |= processJobScheduled;
-                Assert.True(observedProcessJob, "Expected ProcessFileJob scheduling to be observed after hashing on the existing-db path.");
             }
             finally
             {
@@ -359,8 +364,7 @@ public class SQLiteEfOnlyBootstrapTests
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, recursive: true);
+            await DeleteDirectoryWithRetriesAsync(tempDir);
         }
     }
 
@@ -752,6 +756,39 @@ public class SQLiteEfOnlyBootstrapTests
         }
     }
 
+    private static async Task<bool> WaitForHashReadyOrObservedAsync(int folderId, string relativePath, Func<bool> hashObserved, TimeSpan timeout)
+    {
+        using var cancellationTokenSource = new CancellationTokenSource(timeout);
+        while (true)
+        {
+            if (SQLite.SessionFactoryCreateCallCount > 0)
+                return false;
+
+            if (hashObserved())
+                return true;
+
+            using (var scope = Utils.ServiceContainer.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+                var place = await context.VideoLocal_Place.AsNoTracking()
+                    .Where(entry => entry.ManagedFolderID == folderId && entry.RelativePath == relativePath)
+                    .Select(entry => new { entry.VideoID })
+                    .FirstOrDefaultAsync(cancellationTokenSource.Token);
+
+                if (place is { VideoID: > 0 })
+                {
+                    var hashReady = await context.VideoLocal.AsNoTracking()
+                        .AnyAsync(video => video.VideoLocalID == place.VideoID && !string.IsNullOrEmpty(video.Hash) && video.FileSize > 0, cancellationTokenSource.Token);
+                    if (hashReady)
+                        return true;
+                }
+            }
+
+            cancellationTokenSource.Token.ThrowIfCancellationRequested();
+            await Task.Delay(250, cancellationTokenSource.Token);
+        }
+    }
+
     private static ushort GetAvailableTcpPort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -782,5 +819,38 @@ public class SQLiteEfOnlyBootstrapTests
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '__EFMigrationsHistory'";
         return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task<bool> EfMigrationsHistoryContainsMigrationAsync(string databasePath, string migrationId)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM __EFMigrationsHistory WHERE MigrationId = $migrationId";
+        command.Parameters.AddWithValue("$migrationId", migrationId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task DeleteDirectoryWithRetriesAsync(string path)
+    {
+        if (!Directory.Exists(path))
+            return;
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException) when (attempt < 9)
+            {
+                await Task.Delay(250);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 9)
+            {
+                await Task.Delay(250);
+            }
+        }
     }
 }

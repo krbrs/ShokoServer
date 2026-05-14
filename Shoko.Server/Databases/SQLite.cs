@@ -32,10 +32,14 @@ public class SQLite(SystemService systemService) : BaseDatabase<SqliteConnection
     internal static int SessionFactoryCreateCallCount { get; private set; }
     internal static bool ThrowOnSessionFactoryCreateForTests { get; set; }
 
-    internal static void ResetTestState()
+    internal new static void ResetTestState()
     {
         SessionFactoryCreateCallCount = 0;
         ThrowOnSessionFactoryCreateForTests = false;
+        _databasePath = null;
+        BaseDatabase<SqliteConnection>.ResetTestState();
+        ApplicationPaths.ResetTestState();
+        Utils.ResetTestState();
     }
 
     private int? _requiredVersion;

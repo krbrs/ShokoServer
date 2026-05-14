@@ -30,6 +30,12 @@ public abstract class BaseDatabase<T>(SystemService systemService) : IDatabase
 
     // ReSharper disable once StaticMemberInGenericType
     private static string _databaseBackupDirectoryPath;
+
+    internal static void ResetTestState()
+    {
+        _databaseBackupDirectoryPath = null;
+    }
+
     private static string DatabaseBackupDirectoryPath
     {
         get

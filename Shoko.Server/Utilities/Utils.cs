@@ -17,6 +17,11 @@ public static partial class Utils
 
     private static string _applicationPath = null;
 
+    internal static void ResetTestState()
+    {
+        _applicationPath = null;
+    }
+
     public static string ApplicationPath
     {
         get

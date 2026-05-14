@@ -11,6 +11,11 @@ public class ApplicationPaths : IApplicationPaths
 {
     private static ApplicationPaths? _instance = null;
 
+    internal static void ResetTestState()
+    {
+        _instance = null;
+    }
+
     public static IApplicationPaths Instance
         => _instance ??= new();
 
