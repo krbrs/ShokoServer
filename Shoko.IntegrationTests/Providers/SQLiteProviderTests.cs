@@ -1242,6 +1242,56 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public async Task SQLite_AnimeGroupCreator_RecreateAllGroups_EfOnlyStillRequiresNhStatelessSession()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var settingsProvider = Utils.ServiceContainer.GetRequiredService<ISettingsProvider>();
+        var settings = settingsProvider.GetSettings();
+        var originalAutoGroupSeries = settings.AutoGroupSeries;
+        var now = DateTime.UtcNow;
+        var animeId = 940001 + Random.Shared.Next(1000);
+
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = animeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2022, 1, 1),
+            MainTitle = $"recreate-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+        RepoFactory.AnimeSeries.Save(new AnimeSeries
+        {
+            AniDB_ID = animeId,
+            AnimeGroupID = 0,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        }, false, true);
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        settings.AutoGroupSeries = false;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var creator = CreateAnimeGroupCreator();
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => creator.RecreateAllGroups());
+
+            Assert.Contains("NH SessionFactory creation is disallowed", ex.Message);
+            Assert.Equal(sessionFactoryCreateCalls + 1, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            settings.AutoGroupSeries = originalAutoGroupSeries;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
