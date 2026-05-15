@@ -1,10 +1,49 @@
 # Implementation State: Database Client Migration
 
 **Feature Branch**: `001-database-client-migration`  
-**Last Updated**: 2026-05-12  
-**Status**: T001–T172 complete; T173 deferred/manual; T174–T179 complete; T197 complete
+**Last Updated**: 2026-05-15  
+**Status**: EF Core startup activation is implemented; SQLite EF-only bootstrap/runtime is proven for fresh and upgraded fixtures under the internal test guard; production SQLite EF-only opt-in remains deferred
 
 ---
+
+## Spec Kit Status
+
+- No checked-in `.specify/` directory is present in this repository.
+- No checked-in slash-command prompt files for `/speckit.implement` were found.
+- No checked-in `/speckit-implement` alias was found; if used locally, it is not represented in repo state.
+- This branch currently uses the generated feature artifacts under `specs/001-database-client-migration/` directly.
+
+## Current Proven SQLite EF-only Scope
+
+- Fresh SQLite EF-only bootstrap is proven.
+- Existing/upgraded NH-era SQLite fixture bootstrap is proven using `spec-backups/sqlite/Shoko.db3`.
+- Existing-db restart/idempotency is proven.
+- Baseline persistence is proven:
+  - `__EFMigrationsHistory`
+  - migration row `20260509114039_InitialCreate`
+- Startup completes without creating NHibernate `SessionFactory` in the internal EF-only path:
+  - `SQLite.UseEfOnlyBootstrapForTests = true`
+  - `SQLite.ThrowOnSessionFactoryCreateForTests = true`
+  - `SQLite.SessionFactoryCreateCallCount == 0`
+- `RepoFactory.Init()` cache population and `RepoFactory.PostInit()` repair passes complete successfully in the EF-only SQLite path.
+- Legacy compatibility fixes required for the restored SQLite fixture are proven:
+  - `TMDB_Episode.ThumbnailPath` nullable
+  - `TMDB_Image_Entity.TmdbEntityType` no longer stored through `HasConversion<byte>()`
+- Existing-db `RunOnStart` now deterministically proves:
+  - scan boundary
+  - `VideoLocal_Place` creation
+  - hash scheduling for fake media
+  - successful hash for a tiny valid embedded MP4
+  - `ProcessFileJob` scheduling/execution boundary
+  - cached offline `ProcessFileJob.Process()` path without provider search
+- Combined EF-only SQLite startup/runtime tests pass in one VSTest process.
+
+## Remaining Gaps
+
+- Runtime NH dependencies still exist outside the proven cached/offline SQLite path.
+- The live provider/network branch after `VideoReleaseService.SearchStarted` is intentionally unproven.
+- MariaDB and SQL Server EF-only bootstrap/runtime implications are not part of the SQLite-only proof.
+- Production opt-in remains deferred; there is still no broad production SQLite EF-only switch.
 
 ## Current Release Readiness
 
@@ -13,6 +52,7 @@
 - NHibernate remains **bootstrap/compatibility infrastructure** for now. Removal work is still deferred.
 - Quartz scheduler storage (`Quartz.db` / provider-specific Quartz schema) is **out of scope** for this migration.
 - Provider validation is in place for SQLite, MariaDB, and SQL Server.
+- SQLite-only EF bootstrap/runtime proof has now advanced beyond startup into deterministic offline import processing, but this should not be read as a production opt-in signal yet.
 - Benchmark work is split into:
   - `T172`: accepted release benchmark evidence is complete
   - `T173`: deferred manual validation for real-media import/load behavior; not a release blocker for EF startup migration correctness
@@ -1573,8 +1613,9 @@ The regenerated `tasks.md` (188 tasks) aligns exactly with `plan.md` structure a
 - **Purpose**: Legacy schema creation and database initialization via `DatabaseFixes.cs`
 - **Dependency Chain**:
   - `SystemService.InitializeDatabase()` → `instance.CreateAndUpdateSchema()` → raw SQL commands in `SQLite.cs`/`SQLServer.cs`/`MySQL.cs`
-  - No EF Core schema creation path exists in production code
-  - EF Core migrations exist (`20260509114039_InitialCreate`) but are not applied in runtime initialization
+  - Historical note: when this audit entry was written, no proven EF-only SQLite bootstrap path existed
+  - Current state: automatic EF Core activation exists in runtime initialization, and the internal SQLite EF-only path is now proven for fresh and upgraded fixtures under `SQLite.UseEfOnlyBootstrapForTests`
+  - Broad production/provider-wide replacement of the legacy bootstrap path is still deferred
 - **Removal Blocker**: Cannot remove until EF Core-based schema creation/update replacement exists
 
 **2. FluentNHibernate Mapping Files (Dead Code - Safe to Remove)**

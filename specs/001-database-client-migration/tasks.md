@@ -4,6 +4,41 @@
 **Input**: `specs/001-database-client-migration/plan.md`, `specs/001-database-client-migration/spec.md`
 **Inventory**: 75 mapping files, 13 NHibernate converter/utility types (10 IUserType + 3 utility), 85 repository files, ~50 entity models
 
+## Current Proven SQLite EF-only Scope
+
+- Fresh SQLite EF-only bootstrap is proven.
+- Existing/upgraded NH-era SQLite fixture bootstrap is proven using `spec-backups/sqlite/Shoko.db3`.
+- Existing-db restart/idempotency is proven.
+- Baseline persistence is proven:
+  - `__EFMigrationsHistory`
+  - `20260509114039_InitialCreate`
+- TMDB legacy compatibility fixes are proven and should be treated as part of the migration baseline:
+  - `TMDB_Episode.ThumbnailPath` nullable
+  - `TMDB_Image_Entity.TmdbEntityType` no longer narrowed to `byte`
+- Existing-db `RunOnStart` proves scan/hash/process scheduling boundaries.
+- The tiny valid embedded MP4 path proves:
+  - successful hash
+  - `ProcessFileJob` scheduling/execution boundary
+  - cached offline `ProcessFileJob.Process()` without provider search
+- Combined EF-only SQLite startup/runtime tests pass in one VSTest process.
+- The internal SQLite EF-only path still enforces:
+  - `SQLite.UseEfOnlyBootstrapForTests = true`
+  - `SQLite.ThrowOnSessionFactoryCreateForTests = true`
+  - `SQLite.SessionFactoryCreateCallCount == 0`
+
+## Remaining Gaps
+
+- Runtime NH dependencies still exist outside the proven cached/offline SQLite path.
+- The live provider/network branch after `VideoReleaseService.SearchStarted` remains intentionally unproven.
+- MariaDB and SQL Server EF-only bootstrap/runtime implications are not covered by this SQLite-only proof.
+- Production opt-in remains deferred.
+
+## Status Notes
+
+- Tasks in this file that describe SQLite EF-only bootstrap as missing or unproven are now historical and should be read as completed implementation history rather than current status.
+- Automatic EF Core startup activation is implemented.
+- There is still no broad production SQLite EF-only opt-in/default switch.
+
 ---
 
 ## Phase 1: Setup (Infrastructure Scaffold)
