@@ -186,6 +186,36 @@ Current conclusion:
 - The highest-value hidden repository seam to migrate next is `AnimeSeriesRepository.Save(existing series)`.
 - The shared repository infrastructure itself is not uniformly NH-bound anymore; the major remaining risk is ad hoc repository overrides that still open NH sessions internally.
 
+#### Ranked Remaining Repository-specific NH Seams
+
+1. `AnimeEpisodeRepository`
+   - `GetWithMultipleReleases(...)`
+   - `GetWithDuplicateFiles(...)`
+   - why first:
+     - deterministic/local cached-domain queries
+     - still use `SessionFactory.OpenSession()` + `CreateSQLQuery(...)`
+     - clean SQLite EF-only guard characterization exists
+   - characterization test:
+     - `SQLite_AnimeEpisodeRepository_GetWithMultipleReleases_EfOnlyStillRequiresNhSessionFactory`
+2. `ScanFileRepository`
+   - parameterless query helpers still use `SessionFactory.OpenSession()` + `session.Query<ScanFile>()`
+   - deterministic/local, but lower-value than `AnimeEpisodeRepository`
+3. `AniDB_MessageRepository`, `ScheduledUpdateRepository`, `AniDB_AnimeUpdateRepository`
+   - still use `SessionFactory.OpenSession()` for parameterless query helpers
+   - deterministic/local direct-repository seams
+4. `AniDB_GroupStatusRepository`, `AniDB_NotifyQueueRepository`, `AniDB_Anime_SimilarRepository`, `AniDB_Anime_StaffRepository`
+   - still use `OpenStatelessSession()` or NH delete/query paths
+   - local, but narrower operational impact than the episode duplicate/multi-release queries
+5. TMDB direct repositories and optional/text sub-repositories
+   - many parameterless lookup helpers still use `SessionFactory.OpenSession()`
+   - lower priority because the proven startup/runtime path already reaches stable cached TMDB behavior without hitting these as the next blocker
+
+Updated next repository target:
+- `AnimeSeriesRepository.Save(existing series)` is now EF-safe in the SQLite EF-only path.
+- The next repository-specific NH migration target is `AnimeEpisodeRepository`, starting with the raw-SQL episode lookup methods:
+  - `GetWithMultipleReleases(...)`
+  - `GetWithDuplicateFiles(...)`
+
 ## Recommended Next Migration Target
 
 The next best migration target after the proven cached/offline `ProcessFileJob` path is:

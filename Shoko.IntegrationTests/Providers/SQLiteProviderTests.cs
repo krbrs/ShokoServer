@@ -1720,6 +1720,28 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_AnimeEpisodeRepository_GetWithMultipleReleases_EfOnlyStillRequiresNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => RepoFactory.AnimeEpisode.GetWithMultipleReleases(ignoreVariations: true).ToList());
+            Assert.Contains("SessionFactory", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(SQLite.SessionFactoryCreateCallCount > sessionFactoryCreateCalls);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
