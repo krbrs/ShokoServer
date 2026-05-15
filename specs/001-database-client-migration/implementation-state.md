@@ -152,6 +152,40 @@ Status:
 - This is the enabling layer behind most remaining NH usage.
 - It should be reduced incrementally by migrating local seams, not by broad replacement first.
 
+#### Hidden Repository NH Fallbacks Characterized
+
+- `BaseCachedRepository.Populate()`
+  - parameterless/default overload still does:
+    - `DatabaseFactory.SessionFactory.OpenSession()`
+    - `session.Wrap()`
+    - `Populate(ISessionWrapper, ...)`
+  - under the SQLite EF-only guard, this still tries to create NH `SessionFactory`
+  - characterization test:
+    - `SQLite_BaseCachedRepository_ParameterlessPopulate_EfOnlyStillRequiresNhSessionFactory`
+- `BaseCachedRepository.Save(IReadOnlyCollection<T>)`
+  - default shared batch save path is already EF-safe
+  - uses EF transaction + `OpenSessionWrapper(useEntityFramework: true)` for callbacks/cache updates
+  - characterization test:
+    - `SQLite_BaseCachedRepository_SaveBatch_EfOnlyUsesDefaultWrapperWithoutNhSessionFactory`
+- `BaseCachedRepository.Delete(...)`
+  - default shared delete path is already EF-safe
+  - uses EF context transaction + EF wrapper callback path
+  - not a current SQLite EF-only NH blocker
+- `BaseDirectRepository`
+  - parameterless/default `GetByID`, `GetAll`, `Save`, and `Delete` paths are already EF-wrapper based
+  - hidden NH fallback risk is mostly in repository-specific ad hoc methods, not the direct-repo base
+- `AnimeSeriesRepository.Save(existing series)`
+  - still opens NH directly to fetch the pre-update row:
+    - `DatabaseFactory.SessionFactory.OpenSession()`
+    - `session.Get<AnimeSeries>(...)`
+  - this remains a deterministic runtime NH seam under the SQLite EF-only guard
+  - characterization test:
+    - `SQLite_AnimeSeries_SaveExistingSeries_EfOnlyStillRequiresNhSessionFactory`
+
+Current conclusion:
+- The highest-value hidden repository seam to migrate next is `AnimeSeriesRepository.Save(existing series)`.
+- The shared repository infrastructure itself is not uniformly NH-bound anymore; the major remaining risk is ad hoc repository overrides that still open NH sessions internally.
+
 ## Recommended Next Migration Target
 
 The next best migration target after the proven cached/offline `ProcessFileJob` path is:
