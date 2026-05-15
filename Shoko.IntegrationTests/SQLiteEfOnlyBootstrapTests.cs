@@ -32,6 +32,13 @@ namespace Shoko.IntegrationTests;
 [Collection("Database")]
 public class SQLiteEfOnlyBootstrapTests
 {
+    private static void ResetEfOnlyTestState()
+    {
+        SQLite.ResetTestState();
+        QuartzExtensions.ResetTestState();
+        QuartzStartup.ResetTestState();
+    }
+
     [Fact]
     public async Task SQLite_EfOnlyBootstrap_PopulatesInitialData_And_SurvivesRestart()
     {
@@ -44,7 +51,7 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
             Assert.Equal(0, RepoFactory.EfOnlyPopulateSessionCount);
@@ -72,7 +79,7 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await firstHost.StopAsync(TimeSpan.FromSeconds(30));
+                    await StopHostAndDrainAsync(firstHost);
             }
 
             RepoFactory.ResetTestCounters();
@@ -87,14 +94,14 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await secondHost.StopAsync(TimeSpan.FromSeconds(30));
+                    await StopHostAndDrainAsync(secondHost);
             }
 
             succeeded = true;
         }
         finally
         {
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
@@ -121,7 +128,7 @@ public class SQLiteEfOnlyBootstrapTests
             Assert.False(await EfMigrationsHistoryExistsAsync(databasePath), "Expected the existing SQLite fixture to be pre-EF and have no __EFMigrationsHistory table.");
 
             SQLite.UseEfOnlyBootstrapForTests = true;
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
             Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
@@ -150,12 +157,12 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await firstHost.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(firstHost);
             }
 
             Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after EF-only startup activation.");
 
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -170,14 +177,14 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await secondHost.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(secondHost);
             }
 
             succeeded = true;
         }
         finally
         {
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
@@ -270,7 +277,7 @@ public class SQLiteEfOnlyBootstrapTests
             Assert.False(await EfMigrationsHistoryExistsAsync(databasePath), "Expected the existing SQLite fixture to be pre-EF and have no __EFMigrationsHistory table.");
 
             SQLite.UseEfOnlyBootstrapForTests = true;
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -300,13 +307,13 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await seedHost.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(seedHost);
             }
 
             Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
             Assert.True(await EfMigrationsHistoryContainsMigrationAsync(databasePath, "20260509114039_InitialCreate"), "Expected the baseline migration row to persist after the first existing-db startup.");
 
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -347,8 +354,7 @@ public class SQLiteEfOnlyBootstrapTests
             try
             {
                 await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
-                await WaitForManagedFolderPlaceOrNhTouchAsync(folderId, relativePath, TimeSpan.FromSeconds(60));
-                var hashReached = await WaitForHashBoundaryOrObservedAsync(absolutePath, () => observedHashJobForFile, TimeSpan.FromSeconds(30));
+                var hashReached = await WaitForHashBoundaryOrObservedAsync(absolutePath, () => observedHashJobForFile, TimeSpan.FromSeconds(90));
 
                 Assert.True(hashReached, "Expected the existing-db RunOnStart path to reach or observe the hash stage.");
                 Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
@@ -357,12 +363,12 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 queueStateEventHandler.QueueItemsAdded -= onQueueItemsAdded;
                 queueStateEventHandler.ExecutingJobsChanged -= onQueueChanged;
-                await host.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(host);
             }
         }
         finally
         {
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
@@ -389,7 +395,7 @@ public class SQLiteEfOnlyBootstrapTests
             Assert.False(await EfMigrationsHistoryExistsAsync(databasePath), "Expected the existing SQLite fixture to be pre-EF and have no __EFMigrationsHistory table.");
 
             SQLite.UseEfOnlyBootstrapForTests = true;
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -419,13 +425,13 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await seedHost.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(seedHost);
             }
 
             Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
             Assert.True(await EfMigrationsHistoryContainsMigrationAsync(databasePath, "20260509114039_InitialCreate"), "Expected the baseline migration row to persist after the first existing-db startup.");
 
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -490,12 +496,12 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 queueStateEventHandler.QueueItemsAdded -= onQueueItemsAdded;
                 queueStateEventHandler.ExecutingJobsChanged -= onQueueChanged;
-                await host.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(host);
             }
         }
         finally
         {
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
@@ -517,7 +523,7 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -536,10 +542,10 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await seedHost.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(seedHost);
             }
 
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             var host = await StartServiceAsync(
@@ -558,12 +564,12 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await host.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(host);
             }
         }
         finally
         {
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
@@ -586,7 +592,7 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -606,10 +612,10 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await seedHost.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(seedHost);
             }
 
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             var host = await StartServiceAsync(
@@ -628,12 +634,12 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await host.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(host);
             }
         }
         finally
         {
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
@@ -656,7 +662,7 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
             SQLite.UseEfOnlyBootstrapForTests = true;
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
@@ -675,10 +681,10 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
-                await seedHost.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(seedHost);
             }
 
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             var (host, systemService, _) = await StartServiceUntilAboutToStartAsync(
@@ -735,12 +741,12 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 queueStateEventHandler.QueueItemsAdded -= onQueueItemsAdded;
                 queueStateEventHandler.ExecutingJobsChanged -= onQueueChanged;
-                await host.StopAsync(TimeSpan.FromSeconds(30));
+                await StopHostAndDrainAsync(host);
             }
         }
         finally
         {
-            SQLite.ResetTestState();
+            ResetEfOnlyTestState();
             SQLite.UseEfOnlyBootstrapForTests = false;
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
@@ -753,6 +759,25 @@ public class SQLiteEfOnlyBootstrapTests
     {
         var (host, _, _) = await StartServiceUntilAboutToStartAsync(waitForStartupComplete, configureSettings);
         return host;
+    }
+
+    private static async Task StopHostAndDrainAsync(IHost host)
+    {
+        await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
+        await QuartzStartup.WaitForPendingRecurringSchedulingForTests().WaitAsync(TimeSpan.FromSeconds(30));
+        await host.StopAsync(TimeSpan.FromSeconds(30));
+        await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
+        switch (host)
+        {
+            case IAsyncDisposable asyncDisposable:
+                await asyncDisposable.DisposeAsync();
+                break;
+            case IDisposable disposable:
+                disposable.Dispose();
+                break;
+        }
+
+        ResetEfOnlyTestState();
     }
 
     private static async Task<(IHost Host, SystemService SystemService, TaskCompletionSource AboutToStart)> StartServiceUntilAboutToStartAsync(

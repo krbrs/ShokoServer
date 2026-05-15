@@ -32,6 +32,32 @@ public static class QuartzExtensions
 
     private static readonly object _queueLock = new();
 
+    private static readonly ConcurrentDictionary<Guid, Task> _pendingProcessTasks = [];
+
+    internal static void ResetTestState()
+    {
+        lock (_flushLock)
+        {
+            _jobTimer?.Stop();
+            _jobTimer?.Dispose();
+            _jobTimer = null;
+        }
+
+        while (_jobQueue.TryDequeue(out _))
+        {
+        }
+
+        _pendingJobs = [];
+        _pendingProcessTasks.Clear();
+        _isRunning = false;
+    }
+
+    internal static Task WaitForPendingProcessingForTests()
+    {
+        var pending = _pendingProcessTasks.Values.ToArray();
+        return pending.Length is 0 ? Task.CompletedTask : Task.WhenAll(pending);
+    }
+
     /// <summary>
     /// Queue a job of type T with the data map setter and generated identity
     /// </summary>
@@ -104,16 +130,26 @@ public static class QuartzExtensions
                     if (!_isRunning)
                     {
                         _isRunning = true;
-                        Task.Factory.StartNew(ProcessJobs, TaskCreationOptions.LongRunning);
+                        var serviceProvider = Utils.ServiceContainer;
+                        if (serviceProvider is null)
+                        {
+                            _isRunning = false;
+                            return;
+                        }
+
+                        var pendingTaskId = Guid.NewGuid();
+                        var task = Task.Factory.StartNew(() => ProcessJobs(serviceProvider), TaskCreationOptions.LongRunning).Unwrap();
+                        _pendingProcessTasks[pendingTaskId] = task;
+                        _ = task.ContinueWith(_ => _pendingProcessTasks.TryRemove(pendingTaskId, out _), TaskScheduler.Default);
                     }
                 }
             }
         }
     }
 
-    private static async Task ProcessJobs()
+    private static async Task ProcessJobs(IServiceProvider serviceProvider)
     {
-        var scheduler = await Utils.ServiceContainer.GetRequiredService<ISchedulerFactory>().GetScheduler();
+        var scheduler = await serviceProvider.GetRequiredService<ISchedulerFactory>().GetScheduler();
         var scheduleBuilder = SimpleScheduleBuilder.Create().WithMisfireHandlingInstructionIgnoreMisfires();
         while (_jobQueue.TryDequeue(out var jobs))
         {

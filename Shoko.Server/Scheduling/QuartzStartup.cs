@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -27,20 +28,38 @@ namespace Shoko.Server.Scheduling;
 
 public static class QuartzStartup
 {
+    private static readonly ConcurrentDictionary<Guid, Task> _pendingRecurringScheduleTasks = [];
+
+    internal static void ResetTestState()
+    {
+        _pendingRecurringScheduleTasks.Clear();
+    }
+
+    internal static Task WaitForPendingRecurringSchedulingForTests()
+    {
+        var pending = _pendingRecurringScheduleTasks.Values.ToArray();
+        return pending.Length is 0 ? Task.CompletedTask : Task.WhenAll(pending);
+    }
+
     public static async Task ScheduleRecurringJobs(bool replace)
+        => await ScheduleRecurringJobs(Utils.ServiceContainer, replace).ConfigureAwait(false);
+
+    private static async Task ScheduleRecurringJobs(IServiceProvider serviceProvider, bool replace)
     {
         // this needs to run immediately upon scheduling, so it replaces always. Others will run on other schedules
         // Also give it a high priority, since it affects Acquisition Filters
         // StartJobNow gives a priority of 10. We'll give it 20 to be even higher priority
         await ScheduleRecurringJob<CheckNetworkAvailabilityJob>(
+            serviceProvider,
             triggerConfig: t => t.WithPriority(20).WithSimpleSchedule(tr => tr.WithIntervalInMinutes(30).RepeatForever()).StartNow(), replace: true, keepSchedule: false);
         await ScheduleRecurringJob<CheckTraktTokenJob>(
+            serviceProvider,
             triggerConfig: t => t.WithPriority(20).WithSimpleSchedule(tr => tr.WithIntervalInMinutes(60).RepeatForever()).StartNow(), replace: true, keepSchedule: false);
 
         // TODO the other schedule-based jobs that are on timers
     }
 
-    private static async Task ScheduleRecurringJob<T>(Action<T> jobConfig = null, Func<TriggerBuilder, TriggerBuilder> triggerConfig = null,
+    private static async Task ScheduleRecurringJob<T>(IServiceProvider serviceProvider, Action<T> jobConfig = null, Func<TriggerBuilder, TriggerBuilder> triggerConfig = null,
         bool replace = false, bool keepSchedule = true) where T : class, IJob
     {
         jobConfig ??= _ => { };
@@ -50,15 +69,15 @@ public static class QuartzStartup
 
         // this is called when clearing the queue, so the lock is needed to prevent conflicts with StartJob and StartJobNow
 
-        var scheduler = await Utils.ServiceContainer.GetRequiredService<ISchedulerFactory>().GetScheduler();
+        var scheduler = await serviceProvider.GetRequiredService<ISchedulerFactory>().GetScheduler().ConfigureAwait(false);
 
         bool exists;
         IReadOnlyCollection<ITrigger> existingTriggers;
 
         using (var _ = await QuartzExtensions.SchedulerLock.ReaderLockAsync())
         {
-            exists = await scheduler.CheckExists(jobKey);
-            existingTriggers = await scheduler.GetTriggersOfJob(jobKey);
+            exists = await scheduler.CheckExists(jobKey).ConfigureAwait(false);
+            existingTriggers = await scheduler.GetTriggersOfJob(jobKey).ConfigureAwait(false);
         }
 
         if (!exists && !existingTriggers.Any())
@@ -90,16 +109,32 @@ public static class QuartzStartup
     internal static void AddQuartz(this IServiceCollection services, ISystemService systemService)
     {
         // this lets us inject the shoko JobFactory explicitly, instead of only IJobFactory
-        systemService.Started += async (_, _) =>
+        systemService.Started += (_, _) =>
         {
-            try
+            if (systemService.ShutdownPending)
+                return;
+
+            var serviceProvider = Utils.ServiceContainer;
+            if (serviceProvider is null)
+                return;
+
+            var pendingTaskId = Guid.NewGuid();
+            var task = Task.Run(async () =>
             {
-                await ScheduleRecurringJobs(false).ConfigureAwait(false);
-            }
-            catch (SchedulerException ex) when (ex.Message.Contains("Shutdown", StringComparison.OrdinalIgnoreCase))
-            {
-                // The host can already be stopping by the time this fire-and-forget callback runs.
-            }
+                if (systemService.ShutdownPending)
+                    return;
+
+                try
+                {
+                    await ScheduleRecurringJobs(serviceProvider, false).ConfigureAwait(false);
+                }
+                catch (SchedulerException ex) when (ex.Message.Contains("Shutdown", StringComparison.OrdinalIgnoreCase))
+                {
+                    // The host can already be stopping by the time this fire-and-forget callback runs.
+                }
+            });
+            _pendingRecurringScheduleTasks[pendingTaskId] = task;
+            _ = task.ContinueWith(_ => _pendingRecurringScheduleTasks.TryRemove(pendingTaskId, out _), TaskScheduler.Default);
         };
         // JobFactory is stateless, but no reason to recreate it multiple times
         services.AddSingleton<JobFactory>();

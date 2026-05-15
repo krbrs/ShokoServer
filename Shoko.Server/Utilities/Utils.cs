@@ -19,7 +19,11 @@ public static partial class Utils
 
     internal static void ResetTestState()
     {
+        ServiceContainer = null!;
+        SettingsProvider = null!;
         _applicationPath = null;
+        AnimeXmlDirectory = Path.Combine(ApplicationPath, "Anime_HTTP");
+        MyListDirectory = Path.Combine(ApplicationPath, "MyList");
     }
 
     public static string ApplicationPath
