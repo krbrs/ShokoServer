@@ -1833,6 +1833,95 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_DirectLookupCluster_EfOnlyUsesDefaultWrapperWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var now = DateTime.UtcNow;
+        var messageId = 980001 + Random.Shared.Next(1000);
+        var updateType = 981001 + Random.Shared.Next(1000);
+        var animeId = 982001 + Random.Shared.Next(1000);
+
+        RepoFactory.AniDB_Message.Save(new Shoko.Server.Models.AniDB.AniDB_Message
+        {
+            MessageID = messageId,
+            FromUserId = 1,
+            FromUserName = "tester",
+            SentAt = now,
+            FetchedAt = now,
+            Type = Shoko.Server.Server.AniDBMessageType.Normal,
+            Title = $"message-{Guid.NewGuid():N}",
+            Body = string.Empty,
+            Flags = Shoko.Server.Server.AniDBMessageFlags.FileMoved
+        });
+        RepoFactory.AniDB_Message.Save(new Shoko.Server.Models.AniDB.AniDB_Message
+        {
+            MessageID = messageId + 1,
+            FromUserId = 1,
+            FromUserName = "tester",
+            SentAt = now,
+            FetchedAt = now,
+            Type = Shoko.Server.Server.AniDBMessageType.Normal,
+            Title = $"message-handled-{Guid.NewGuid():N}",
+            Body = string.Empty,
+            Flags = Shoko.Server.Server.AniDBMessageFlags.FileMoved | Shoko.Server.Server.AniDBMessageFlags.FileMoveHandled
+        });
+
+        RepoFactory.ScheduledUpdate.Save(new Shoko.Server.Models.Internal.ScheduledUpdate
+        {
+            UpdateType = updateType,
+            LastUpdate = now,
+            UpdateDetails = $"scheduled-update-{Guid.NewGuid():N}"
+        });
+
+        RepoFactory.AniDB_AnimeUpdate.Save(new Shoko.Server.Models.AniDB.AniDB_AnimeUpdate
+        {
+            AnimeID = animeId,
+            UpdatedAt = now
+        });
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var message = RepoFactory.AniDB_Message.GetByMessageId(messageId);
+            var unhandledMessages = RepoFactory.AniDB_Message.GetUnhandledFileMoveMessages();
+            var scheduledUpdate = RepoFactory.ScheduledUpdate.GetByUpdateType(updateType);
+            var animeUpdate = RepoFactory.AniDB_AnimeUpdate.GetByAnimeID(animeId);
+
+            Assert.NotNull(message);
+            Assert.Equal(messageId, message.MessageID);
+            Assert.Single(unhandledMessages.Where(a => a.MessageID == messageId));
+
+            Assert.NotNull(scheduledUpdate);
+            Assert.Equal(updateType, scheduledUpdate.UpdateType);
+
+            Assert.NotNull(animeUpdate);
+            Assert.Equal(animeId, animeUpdate.AnimeID);
+            Assert.Equal(now, animeUpdate.UpdatedAt);
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+            var remainingAnimeUpdates = context.Set<Shoko.Server.Models.AniDB.AniDB_AnimeUpdate>()
+                .AsNoTracking()
+                .Where(a => a.AnimeID == animeId)
+                .OrderByDescending(a => a.UpdatedAt)
+                .ToList();
+
+            Assert.Single(remainingAnimeUpdates);
+            Assert.Equal(now, remainingAnimeUpdates[0].UpdatedAt);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())

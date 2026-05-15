@@ -188,13 +188,10 @@ Current conclusion:
 
 #### Ranked Remaining Repository-specific NH Seams
 
-1. `AniDB_MessageRepository`, `ScheduledUpdateRepository`, `AniDB_AnimeUpdateRepository`
-   - still use `SessionFactory.OpenSession()` for parameterless query helpers
-   - deterministic/local direct-repository seams
-2. `AniDB_GroupStatusRepository`, `AniDB_NotifyQueueRepository`, `AniDB_Anime_SimilarRepository`, `AniDB_Anime_StaffRepository`
+1. `AniDB_GroupStatusRepository`, `AniDB_NotifyQueueRepository`, `AniDB_Anime_SimilarRepository`, `AniDB_Anime_StaffRepository`
    - still use `OpenStatelessSession()` or NH delete/query paths
    - local, but narrower operational impact than the episode duplicate/multi-release queries
-3. TMDB direct repositories and optional/text sub-repositories
+2. TMDB direct repositories and optional/text sub-repositories
    - many parameterless lookup helpers still use `SessionFactory.OpenSession()`
    - lower priority because the proven startup/runtime path already reaches stable cached TMDB behavior without hitting these as the next blocker
 
@@ -202,7 +199,12 @@ Updated next repository target:
 - `AnimeSeriesRepository.Save(existing series)` is now EF-safe in the SQLite EF-only path.
 - `AnimeEpisodeRepository.GetWithMultipleReleases(...)` and `GetWithDuplicateFiles(...)` are now EF-safe in the SQLite EF-only path.
 - `ScanFileRepository` parameterless query helpers are already EF-safe under the SQLite EF-only guard.
-- The next direct local lookup seam is the `AniDB_MessageRepository` / `ScheduledUpdateRepository` / `AniDB_AnimeUpdateRepository` cluster, followed by the remaining stateless AniDB direct repositories.
+- `AniDB_MessageRepository`, `ScheduledUpdateRepository`, and `AniDB_AnimeUpdateRepository` parameterless lookups are EF-safe under the SQLite EF-only guard, including the `AniDB_AnimeUpdateRepository` duplicate-cleanup path.
+- The next direct local lookup seam is the remaining stateless AniDB direct repository cluster:
+  - `AniDB_GroupStatusRepository`
+  - `AniDB_NotifyQueueRepository`
+  - `AniDB_Anime_SimilarRepository`
+  - `AniDB_Anime_StaffRepository`
 
 ## Recommended Next Migration Target
 
