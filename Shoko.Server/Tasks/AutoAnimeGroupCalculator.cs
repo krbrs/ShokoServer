@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NHibernate;
 using Shoko.Abstractions.Metadata.Enums;
+using Shoko.Server.Data;
 using Shoko.Server.Databases;
 using Shoko.Server.Repositories;
 using Shoko.Server.Utilities;
@@ -100,6 +102,11 @@ public class AutoAnimeGroupCalculator
         AnimeRelationType relationsToFuzzyTitleTest = AnimeRelationType.SecondaryRelations,
         MainAnimeSelectionStrategy mainAnimeSelectionStrategy = MainAnimeSelectionStrategy.MinAirDate)
     {
+        if (SQLite.UseEfOnlyBootstrapForTests)
+        {
+            return CreateWithEf(exclusions, relationsToFuzzyTitleTest, mainAnimeSelectionStrategy);
+        }
+
         using var session = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>().SessionFactory.OpenSession();
         var relationshipList = BaseRepository.Lock(session, s => s.CreateSQLQuery(@"
                 SELECT    fromAnime.AnimeID AS fromAnimeId
@@ -184,6 +191,60 @@ public class AutoAnimeGroupCalculator
 
         return new AutoAnimeGroupCalculator(relationshipMap, exclusions, relationsToFuzzyTitleTest,
             mainAnimeSelectionStrategy);
+    }
+
+    private static AutoAnimeGroupCalculator CreateWithEf(
+        AutoGroupExclude exclusions,
+        AnimeRelationType relationsToFuzzyTitleTest,
+        MainAnimeSelectionStrategy mainAnimeSelectionStrategy)
+    {
+        using var scope = Utils.ServiceContainer.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+        var relationshipRows = (
+            from rel in context.AniDB_Anime_Relation.AsNoTracking()
+            join fromAnime in context.AniDB_Anime.AsNoTracking() on rel.AnimeID equals fromAnime.AnimeID
+            join toAnime in context.AniDB_Anime.AsNoTracking() on rel.RelatedAnimeID equals toAnime.AnimeID
+            select new
+            {
+                FromAnimeId = fromAnime.AnimeID,
+                ToAnimeId = toAnime.AnimeID,
+                FromAnimeType = fromAnime.AnimeType,
+                ToAnimeType = toAnime.AnimeType,
+                FromMainTitle = fromAnime.MainTitle,
+                ToMainTitle = toAnime.MainTitle,
+                FromAirDate = fromAnime.AirDate,
+                ToAirDate = toAnime.AirDate,
+                rel.RelationType
+            }).ToList();
+
+        var relationshipMap = relationshipRows.Select(r => new AnimeRelation
+            {
+                FromId = r.FromAnimeId,
+                ToId = r.ToAnimeId,
+                FromType = r.FromAnimeType,
+                ToType = r.ToAnimeType,
+                FromMainTitle = r.FromMainTitle,
+                ToMainTitle = r.ToMainTitle,
+                FromAirDate = r.FromAirDate,
+                ToAirDate = r.ToAirDate,
+                RelationType = r.RelationType?.ToLowerInvariant() switch
+                {
+                    "full story" => AnimeRelationType.FullStory,
+                    "summary" => AnimeRelationType.Summary,
+                    "parent story" => AnimeRelationType.ParentStory,
+                    "side story" => AnimeRelationType.SideStory,
+                    "prequel" => AnimeRelationType.Prequel,
+                    "sequel" => AnimeRelationType.Sequel,
+                    "alternative setting" => AnimeRelationType.AlternativeSetting,
+                    "alternative version" => AnimeRelationType.AlternativeVersion,
+                    "same setting" => AnimeRelationType.SameSetting,
+                    "character" => AnimeRelationType.Character,
+                    _ => AnimeRelationType.Other
+                }
+            })
+            .ToLookup(k => k.FromId);
+
+        return new AutoAnimeGroupCalculator(relationshipMap, exclusions, relationsToFuzzyTitleTest, mainAnimeSelectionStrategy);
     }
 
     /// <summary>

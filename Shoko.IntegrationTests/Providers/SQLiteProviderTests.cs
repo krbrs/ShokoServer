@@ -1053,12 +1053,59 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
-    public void SQLite_AnimeGroupCreator_GetOrCreateSingleGroupForSeries_EfOnlyStillRequiresNhAutoGroupCalculator()
+    public void SQLite_AnimeGroupCreator_GetOrCreateSingleGroupForSeries_EfOnlyUsesEfAutoGroupCalculator()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
         var settingsProvider = Utils.ServiceContainer.GetRequiredService<ISettingsProvider>();
         var settings = settingsProvider.GetSettings();
         var originalAutoGroupSeries = settings.AutoGroupSeries;
+        var now = DateTime.UtcNow;
+        var existingGroup = new AnimeGroup
+        {
+            GroupName = $"auto-group-existing-{Guid.NewGuid():N}",
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        RepoFactory.AnimeGroup.Save(existingGroup);
+
+        var relatedAnimeId = 910001 + Random.Shared.Next(1000);
+        var targetAnimeId = 920001 + Random.Shared.Next(1000);
+
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = relatedAnimeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2000, 1, 1),
+            MainTitle = $"related-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = targetAnimeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2001, 1, 1),
+            MainTitle = $"target-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+        RepoFactory.AniDB_Anime_Relation.Save(new Shoko.Server.Models.AniDB.AniDB_Anime_Relation
+        {
+            AnimeID = targetAnimeId,
+            RelatedAnimeID = relatedAnimeId,
+            RelationType = "prequel"
+        });
+
+        RepoFactory.AnimeSeries.Save(new AnimeSeries
+        {
+            AniDB_ID = relatedAnimeId,
+            AnimeGroupID = existingGroup.AnimeGroupID,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        }, false, true);
+
         var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
         databaseFactory.CloseSessionFactory();
         settings.AutoGroupSeries = true;
@@ -1069,14 +1116,16 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             var creator = CreateAnimeGroupCreator();
             var series = new AnimeSeries
             {
-                AniDB_ID = 910000 + Random.Shared.Next(1000),
+                AniDB_ID = targetAnimeId,
                 DateTimeCreated = DateTime.UtcNow,
                 DateTimeUpdated = DateTime.UtcNow
             };
 
-            var ex = Assert.Throws<InvalidOperationException>(() => creator.GetOrCreateSingleGroupForSeries(series));
-            Assert.Contains("NH SessionFactory creation is disallowed", ex.Message);
-            Assert.Equal(sessionFactoryCreateCalls + 1, SQLite.SessionFactoryCreateCallCount);
+            var group = creator.GetOrCreateSingleGroupForSeries(series);
+
+            Assert.NotNull(group);
+            Assert.Equal(existingGroup.AnimeGroupID, group.AnimeGroupID);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }
         finally
         {
