@@ -502,30 +502,46 @@ public class AnimeGroupCreator
 
     public async Task RecalculateStatsContractsForGroup(AnimeGroup group)
     {
-        using var sessionNotWrapped = _databaseFactory.SessionFactory.OpenSession();
+        var useEfOnlySession = _databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests;
         var groups = new List<AnimeGroup> { group };
-        var session = sessionNotWrapped.Wrap();
+        using var session = useEfOnlySession
+            ? _databaseFactory.OpenSessionWrapper(useEntityFramework: true)
+            : _databaseFactory.SessionFactory.OpenSession().Wrap();
         var series = group.AllSeries;
         // recalculate series
         _logger.LogInformation("Recalculating Series Stats and Contracts for Group: {Name} ({ID})", group.GroupName, group.AnimeGroupID);
-        await BaseRepository.Lock(async () =>
+        if (useEfOnlySession)
         {
-            using var trans = session.BeginTransaction();
             await UpdateAnimeSeriesContractsAndSave(session, series);
-            await trans.CommitAsync();
-        });
+        }
+        else
+        {
+            await BaseRepository.Lock(async () =>
+            {
+                using var trans = session.BeginTransaction();
+                await UpdateAnimeSeriesContractsAndSave(session, series);
+                await trans.CommitAsync();
+            });
+        }
 
         // Update Cache so that group can recalculate
         series.ForEach(_animeSeriesRepo.Cache.Update);
 
         // Recalculate group
         _logger.LogInformation("Recalculating Group Stats and Contracts for Group: {Name} ({ID})", group.GroupName, group.AnimeGroupID);
-        await BaseRepository.Lock(async () =>
+        if (useEfOnlySession)
         {
-            using var trans = session.BeginTransaction();
             await UpdateAnimeGroupsAndTheirContracts(groups);
-            await trans.CommitAsync();
-        });
+        }
+        else
+        {
+            await BaseRepository.Lock(async () =>
+            {
+                using var trans = session.BeginTransaction();
+                await UpdateAnimeGroupsAndTheirContracts(groups);
+                await trans.CommitAsync();
+            });
+        }
 
         // update cache
         _animeGroupRepo.Cache.Update(group);

@@ -1137,26 +1137,101 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
-    public async Task SQLite_AnimeGroupCreator_RecalculateStatsContractsForGroup_EfOnlyStillRequiresNhSessionFactory()
+    public async Task SQLite_AnimeGroupCreator_RecalculateStatsContractsForGroup_EfOnlyRecalculatesStatsWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
-        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        var now = DateTime.UtcNow;
+        var user = new JMMUser
+        {
+            Username = $"sqlite-stats-user-{Guid.NewGuid():N}",
+            Password = "password",
+            IsAdmin = 1
+        };
+        RepoFactory.JMMUser.Save(user);
+
+        var group = new AnimeGroup
+        {
+            GroupName = $"group-recalc-{Guid.NewGuid():N}",
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        RepoFactory.AnimeGroup.Save(group);
+
+        var series = new AnimeSeries
+        {
+            AniDB_ID = 930001 + Random.Shared.Next(1000),
+            AnimeGroupID = group.AnimeGroupID,
+            DateTimeCreated = now,
+            DateTimeUpdated = now,
+            MissingEpisodeCount = 3,
+            MissingEpisodeCountGroups = 2,
+            LatestEpisodeAirDate = new DateTime(2020, 5, 4)
+        };
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = series.AniDB_ID,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2020, 1, 1),
+            MainTitle = $"stats-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+        RepoFactory.AnimeSeries.Save(series, false, true);
+        RepoFactory.AnimeSeries_User.Save(new AnimeSeries_User
+        {
+            JMMUserID = user.JMMUserID,
+            AnimeSeriesID = series.AnimeSeriesID,
+            WatchedCount = 4,
+            WatchedEpisodeCount = 7,
+            UnwatchedEpisodeCount = 2,
+            PlayedCount = 5,
+            StoppedCount = 1,
+            WatchedDate = new DateTime(2021, 7, 8),
+            LastUpdated = now
+        });
+
         databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
         SQLite.UseEfOnlyBootstrapForTests = true;
         SQLite.ThrowOnSessionFactoryCreateForTests = true;
         try
         {
             var creator = CreateAnimeGroupCreator();
-            var group = new AnimeGroup
-            {
-                GroupName = $"group-recalc-{Guid.NewGuid():N}",
-                DateTimeCreated = DateTime.UtcNow,
-                DateTimeUpdated = DateTime.UtcNow
-            };
+            await creator.RecalculateStatsContractsForGroup(group);
 
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => creator.RecalculateStatsContractsForGroup(group));
-            Assert.Contains("NH SessionFactory creation is disallowed", ex.Message);
-            Assert.Equal(sessionFactoryCreateCalls + 1, SQLite.SessionFactoryCreateCallCount);
+            var refreshedGroup = RepoFactory.AnimeGroup.GetByID(group.AnimeGroupID);
+            var refreshedGroupUser = RepoFactory.AnimeGroup_User.GetByUserAndGroupID(user.JMMUserID, group.AnimeGroupID);
+
+            Assert.NotNull(refreshedGroup);
+            Assert.Equal(3, refreshedGroup.MissingEpisodeCount);
+            Assert.Equal(2, refreshedGroup.MissingEpisodeCountGroups);
+            Assert.Equal(new DateTime(2020, 5, 4), refreshedGroup.LatestEpisodeAirDate);
+
+            Assert.NotNull(refreshedGroupUser);
+            Assert.Equal(0, refreshedGroupUser.WatchedCount);
+            Assert.Equal(0, refreshedGroupUser.WatchedEpisodeCount);
+            Assert.Equal(0, refreshedGroupUser.UnwatchedEpisodeCount);
+            Assert.Equal(0, refreshedGroupUser.PlayedCount);
+            Assert.Equal(0, refreshedGroupUser.StoppedCount);
+            Assert.Null(refreshedGroupUser.WatchedDate);
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+            var persistedGroup = context.AnimeGroup.AsNoTracking().Single(a => a.AnimeGroupID == group.AnimeGroupID);
+            var persistedGroupUser = context.AnimeGroup_User.AsNoTracking().Single(a => a.AnimeGroupID == group.AnimeGroupID && a.JMMUserID == user.JMMUserID);
+
+            Assert.Equal(0, persistedGroup.MissingEpisodeCount);
+            Assert.Equal(0, persistedGroup.MissingEpisodeCountGroups);
+            Assert.Null(persistedGroup.LatestEpisodeAirDate);
+            Assert.Equal(refreshedGroupUser.WatchedCount, persistedGroupUser.WatchedCount);
+            Assert.Equal(refreshedGroupUser.WatchedEpisodeCount, persistedGroupUser.WatchedEpisodeCount);
+            Assert.Equal(refreshedGroupUser.UnwatchedEpisodeCount, persistedGroupUser.UnwatchedEpisodeCount);
+            Assert.Equal(refreshedGroupUser.PlayedCount, persistedGroupUser.PlayedCount);
+            Assert.Equal(refreshedGroupUser.StoppedCount, persistedGroupUser.StoppedCount);
+            Assert.Equal(refreshedGroupUser.WatchedDate, persistedGroupUser.WatchedDate);
+
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }
         finally
         {
