@@ -5,14 +5,21 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Shoko.Abstractions.Video.Services;
 using Shoko.Server.API.v2.Models.common;
 using Shoko.Server.Data;
 using Shoko.Server.Databases;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
+using Shoko.Server.Repositories.Cached;
+using Shoko.Server.Repositories.Cached.AniDB;
+using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.AniDB;
 using Shoko.Server.Scheduling.Jobs.Shoko;
+using Shoko.Server.Services;
+using Shoko.Server.Settings;
+using Shoko.Server.Tasks;
 using Shoko.Server.Utilities;
 using Xunit;
 
@@ -943,7 +950,11 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     [Fact]
     public void SQLite_AnimeSeries_RegenerateDb_EfOnlyRepairsMissingGroups()
     {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
         SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
         try
         {
             var now = DateTime.UtcNow;
@@ -1006,8 +1017,6 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             RepoFactory.AnimeSeries.Save(noGroupSeries, false, true);
             RepoFactory.AnimeSeries.Save(danglingGroupSeries, false, true);
 
-            RepoFactory.AnimeGroup.Populate();
-            RepoFactory.AnimeSeries.Populate();
             RepoFactory.AnimeSeries.RegenerateDb();
 
             var refreshedValidSeries = RepoFactory.AnimeSeries.GetByID(validSeries.AnimeSeriesID);
@@ -1033,10 +1042,78 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             Assert.Equal(validGroup.AnimeGroupID, persistedValidSeries.AnimeGroupID);
             Assert.Equal(refreshedNoGroupSeries.AnimeGroupID, persistedNoGroupSeries.AnimeGroupID);
             Assert.Equal(refreshedDanglingGroupSeries.AnimeGroupID, persistedDanglingGroupSeries.AnimeGroupID);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }
         finally
         {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
             SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
+    public void SQLite_AnimeGroupCreator_GetOrCreateSingleGroupForSeries_EfOnlyStillRequiresNhAutoGroupCalculator()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var settingsProvider = Utils.ServiceContainer.GetRequiredService<ISettingsProvider>();
+        var settings = settingsProvider.GetSettings();
+        var originalAutoGroupSeries = settings.AutoGroupSeries;
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        databaseFactory.CloseSessionFactory();
+        settings.AutoGroupSeries = true;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var creator = CreateAnimeGroupCreator();
+            var series = new AnimeSeries
+            {
+                AniDB_ID = 910000 + Random.Shared.Next(1000),
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow
+            };
+
+            var ex = Assert.Throws<InvalidOperationException>(() => creator.GetOrCreateSingleGroupForSeries(series));
+            Assert.Contains("NH SessionFactory creation is disallowed", ex.Message);
+            Assert.Equal(sessionFactoryCreateCalls + 1, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            settings.AutoGroupSeries = originalAutoGroupSeries;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_AnimeGroupCreator_RecalculateStatsContractsForGroup_EfOnlyStillRequiresNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        databaseFactory.CloseSessionFactory();
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var creator = CreateAnimeGroupCreator();
+            var group = new AnimeGroup
+            {
+                GroupName = $"group-recalc-{Guid.NewGuid():N}",
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow
+            };
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => creator.RecalculateStatsContractsForGroup(group));
+            Assert.Contains("NH SessionFactory creation is disallowed", ex.Message);
+            Assert.Equal(sessionFactoryCreateCalls + 1, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
         }
     }
 
@@ -1208,5 +1285,21 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    private static AnimeGroupCreator CreateAnimeGroupCreator()
+    {
+        var services = Utils.ServiceContainer;
+        return new AnimeGroupCreator(
+            services.GetRequiredService<SystemService>(),
+            services.GetRequiredService<ISettingsProvider>(),
+            services.GetRequiredService<QueueHandler>(),
+            services.GetRequiredService<ILogger<AnimeGroupCreator>>(),
+            services.GetRequiredService<DatabaseFactory>(),
+            services.GetRequiredService<AniDB_AnimeRepository>(),
+            services.GetRequiredService<AnimeSeriesRepository>(),
+            services.GetRequiredService<AnimeGroupRepository>(),
+            services.GetRequiredService<AnimeGroup_UserRepository>(),
+            services.GetRequiredService<AnimeGroupService>());
     }
 }
