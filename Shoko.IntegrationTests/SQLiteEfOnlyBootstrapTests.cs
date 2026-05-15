@@ -11,7 +11,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Quartz;
+using Shoko.Abstractions.Video.Events;
 using Shoko.Abstractions.Video.Enums;
+using Shoko.Abstractions.Video.Services;
 using Shoko.Server.Data;
 using Shoko.Server.Data.SchemaComparison;
 using Shoko.Server.Databases;
@@ -491,6 +493,7 @@ public class SQLiteEfOnlyBootstrapTests
                     () => observedProcessItems.Any(item => IsProcessJobForFileOrVideo(item, relativePath, videoLocalId)),
                     TimeSpan.FromSeconds(30));
                 Assert.True(reachedProcessBoundary, "Expected the valid upgraded-db runtime file to reach ProcessFileJob scheduling or execution.");
+                await AssertProcessFileJobUsesCachedReleaseOfflineAsync(videoLocalId);
             }
             finally
             {
@@ -1014,6 +1017,61 @@ public class SQLiteEfOnlyBootstrapTests
 
             cancellationTokenSource.Token.ThrowIfCancellationRequested();
             await Task.Delay(250, cancellationTokenSource.Token);
+        }
+    }
+
+    private static async Task AssertProcessFileJobUsesCachedReleaseOfflineAsync(int videoLocalId)
+    {
+        var video = RepoFactory.VideoLocal.GetByID(videoLocalId);
+        Assert.NotNull(video);
+        Assert.False(string.IsNullOrEmpty(video!.Hash));
+        Assert.True(video.FileSize > 0);
+
+        if (RepoFactory.StoredReleaseInfo.GetByEd2kAndFileSize(video.Hash, video.FileSize) is null)
+        {
+            RepoFactory.StoredReleaseInfo.Save(new Shoko.Server.Models.Release.StoredReleaseInfo
+            {
+                ED2K = video.Hash,
+                FileSize = video.FileSize,
+                ProviderName = "TestFixture",
+                ReleaseURI = $"test://video/{videoLocalId}",
+                CreatedAt = DateTime.UtcNow,
+                LastUpdatedAt = DateTime.UtcNow,
+                EmbeddedCrossReferences = "[]"
+            });
+        }
+
+        var currentRelease = RepoFactory.StoredReleaseInfo.GetByEd2kAndFileSize(video.Hash, video.FileSize);
+        Assert.NotNull(currentRelease);
+
+        var videoReleaseService = Utils.ServiceContainer.GetRequiredService<IVideoReleaseService>();
+        var jobFactory = Utils.ServiceContainer.GetRequiredService<JobFactory>();
+        var observedSearchStarted = false;
+        EventHandler<VideoReleaseSearchStartedEventArgs> onSearchStarted = (_, e) =>
+        {
+            if (e.Video.ID == videoLocalId)
+                observedSearchStarted = true;
+        };
+        videoReleaseService.SearchStarted += onSearchStarted;
+
+        try
+        {
+            var processFileJob = jobFactory.CreateJob<ProcessFileJob>(job =>
+            {
+                job.VideoLocalID = videoLocalId;
+                job.ForceRecheck = false;
+                job.SkipMyList = true;
+                job.ShouldRelocate = false;
+            });
+
+            await processFileJob.Process();
+
+            Assert.False(observedSearchStarted, "Expected cached release info to keep ProcessFileJob offline and avoid provider search.");
+            Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            videoReleaseService.SearchStarted -= onSearchStarted;
         }
     }
 
