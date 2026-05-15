@@ -45,6 +45,129 @@
 - MariaDB and SQL Server EF-only bootstrap/runtime implications are not part of the SQLite-only proof.
 - Production opt-in remains deferred; there is still no broad production SQLite EF-only switch.
 
+## Runtime NH Dependency Inventory
+
+This inventory is focused on post-startup runtime behavior after the proven SQLite EF-only bootstrap/cache/post-init/offline import path.
+
+### 1. Already Covered by EF-only Bootstrap/Runtime Tests
+
+- `RepoFactory.Init()` EF cache population through `OpenSessionWrapper(useEntityFramework: true)`
+- `RepoFactory.PostInit()` repair passes for:
+  - `VideoLocalRepository.RegenerateDb()`
+  - `VideoLocal_PlaceRepository.RegenerateDb()`
+  - `AnimeSeriesRepository.RegenerateDb()`
+- Fresh and existing/upgraded SQLite EF-only startup
+- Existing-db restart/idempotency
+- Existing-db `RunOnStart` reaching:
+  - scan boundary
+  - `VideoLocal_Place` creation
+  - `HashFileJob` scheduling
+  - successful hash for valid MP4
+  - `ProcessFileJob` scheduling/execution boundary
+  - cached offline `ProcessFileJob.Process()` path
+
+### 2. Provider / Network Path
+
+- `VideoReleaseService.FindReleaseForVideo(...)`
+  - after cached release lookup fails, it walks enabled release providers
+  - not primarily NH-bound; this is the first intentional provider/network boundary
+- `AnidbReleaseProvider.GetReleaseInfoForVideo(...)`
+  - enters AniDB UDP lookup through `RequestGetFile`
+- `RequestGetFile.Send()`
+  - external AniDB UDP request boundary
+
+Status:
+- This path is intentionally unproven in the offline SQLite coverage.
+- This is a runtime/provider boundary, not the next best NH migration target.
+
+### 3. Grouping / Stat Calculation Path
+
+- `AnimeGroupCreator`
+  - still uses `SessionFactory.OpenStatelessSession()`
+  - still uses `SessionFactory.OpenSession()`
+  - still depends on `ISessionWrapper` and `CreateSQLQuery(...)`
+  - key file: [AnimeGroupCreator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AnimeGroupCreator.cs)
+- `AutoAnimeGroupCalculator`
+  - still uses `SessionFactory.OpenSession()`
+  - still uses NH SQL projection via `CreateSQLQuery(...)` and `NHibernateUtil.*`
+  - key file: [AutoAnimeGroupCalculator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AutoAnimeGroupCalculator.cs)
+- `AnimeSeriesRepository`
+  - still contains NH-backed query and save/update paths used by grouping/stat flows
+  - `OpenSession()` and `CreateSQLQuery(...)` remain in several series maintenance queries
+
+Status:
+- This is the first large deterministic local runtime area that is still NH-heavy after the proven cached/offline file path.
+- This is the best next migration target.
+
+### 4. Action / Job Path
+
+- `ActionService`
+  - still contains explicit `SessionFactory.OpenSession()` usage
+  - key file: [ActionService.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Services/ActionService.cs)
+- `VideoService`
+  - still exposes explicit `ISession` transaction paths
+  - still opens NH sessions in runtime removal/update flows
+  - key file: [VideoService.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Services/VideoService.cs)
+- `Scanner`
+  - still opens NH session during scan pipeline work
+  - key file: [Scanner.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Utilities/Scanner.cs)
+
+Status:
+- Local/runtime and important, but broader than the grouping/stat seam.
+- Good follow-up target after grouping/stat migration.
+
+### 5. Database Maintenance Path
+
+- `DatabaseFixes`
+  - still opens NH sessions
+  - still uses `CreateSQLQuery(...)`
+  - still orchestrates migration/repair operations through legacy session-based code
+  - key file: [DatabaseFixes.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Databases/DatabaseFixes.cs)
+- provider database classes (`SQLite.cs`, `SQLServer.cs`, `MySQL.cs`)
+  - still retain NH/FluentNHibernate bootstrap infrastructure
+
+Status:
+- Important, but not the next runtime target.
+- This is migration/maintenance infrastructure, not the first post-startup runtime blocker.
+
+### 6. Repository Infrastructure Path
+
+- `DatabaseFactory.SessionFactory`
+  - still exists as a general NH runtime dependency
+- `BaseCachedRepository`
+  - main save/delete path is EF-capable
+  - but default NH-backed session usage still exists in shared infrastructure
+- `EfCoreSessionWrapper`
+  - still throws for NH-only query APIs:
+    - `CreateCriteria(...)`
+    - `CreateQuery(...)`
+    - `CreateSQLQuery(...)`
+    - `QueryOver(...)`
+- many direct and cached repositories still use:
+  - `OpenSession()`
+  - `OpenStatelessSession()`
+  - explicit NH SQL queries
+
+Status:
+- This is the enabling layer behind most remaining NH usage.
+- It should be reduced incrementally by migrating local seams, not by broad replacement first.
+
+## Recommended Next Migration Target
+
+The next best migration target after the proven cached/offline `ProcessFileJob` path is:
+
+1. `AnimeGroupCreator`
+2. `AutoAnimeGroupCalculator`
+3. the specific `AnimeSeriesRepository` NH query/save helpers they depend on
+
+Why this seam next:
+
+- It is deterministic and local.
+- It does not require live AniDB/network.
+- It is still one of the heaviest remaining NH runtime areas.
+- It is smaller and safer than broad `ActionService` / `VideoService` / `DatabaseFixes` migration.
+- It directly reduces NH usage in grouping/stat recalculation, which is a meaningful runtime path after startup.
+
 ## Current Release Readiness
 
 - Automatic EF Core startup activation is **implemented** in the normal server startup path.
