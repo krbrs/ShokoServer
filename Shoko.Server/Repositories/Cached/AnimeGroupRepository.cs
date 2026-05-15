@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NutzCode.InMemoryIndex;
 using Shoko.Server.Databases;
@@ -158,7 +159,20 @@ public class AnimeGroupRepository : BaseCachedRepository<AnimeGroup, int>
         await Lock(async () =>
         {
             // Then, actually delete the AnimeGroups
-            if (excludeGroupId != null)
+            if (session is EfCoreSessionWrapper efSession)
+            {
+                if (excludeGroupId != null)
+                {
+                    await efSession.Context.AnimeGroup
+                        .Where(group => group.AnimeGroupID != excludeGroupId.Value)
+                        .ExecuteDeleteAsync();
+                }
+                else
+                {
+                    await efSession.Context.AnimeGroup.ExecuteDeleteAsync();
+                }
+            }
+            else if (excludeGroupId != null)
             {
                 await session.CreateSQLQuery("DELETE FROM AnimeGroup WHERE AnimeGroupID <> :excludeId")
                     .SetInt32("excludeId", excludeGroupId.Value)

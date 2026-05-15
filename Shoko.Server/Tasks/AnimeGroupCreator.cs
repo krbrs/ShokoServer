@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Shoko.Abstractions.Extensions;
 using Shoko.Server.Databases;
@@ -105,13 +106,24 @@ public class AnimeGroupCreator
 
         await _animeGroupUserRepo.DeleteAll(session);
         await _animeGroupRepo.DeleteAll(session, tempGroupId);
-        await BaseRepository.Lock(async () =>
+        if (session is EfCoreSessionWrapper efSession)
         {
-            await session.CreateSQLQuery(@"
+            await BaseRepository.Lock(async () =>
+            {
+                await efSession.Context.AnimeSeries.ExecuteUpdateAsync(setters => setters
+                    .SetProperty(series => series.AnimeGroupID, tempGroupId));
+            });
+        }
+        else
+        {
+            await BaseRepository.Lock(async () =>
+            {
+                await session.CreateSQLQuery(@"
                 UPDATE AnimeSeries SET AnimeGroupID = :tempGroupId;")
-                .SetInt32("tempGroupId", tempGroupId)
-                .ExecuteUpdateAsync();
-        });
+                    .SetInt32("tempGroupId", tempGroupId)
+                    .ExecuteUpdateAsync();
+            });
+        }
 
         // We've deleted/modified all AnimeSeries/GroupFilter records, so update caches to reflect that
         _animeSeriesRepo.ClearCache();
@@ -496,8 +508,10 @@ public class AnimeGroupCreator
 
     public async Task RecreateAllGroups()
     {
-        using var session = _databaseFactory.SessionFactory.OpenStatelessSession();
-        await RecreateAllGroups(session.Wrap());
+        using var session = _databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests
+            ? _databaseFactory.OpenSessionWrapper(useEntityFramework: true)
+            : _databaseFactory.SessionFactory.OpenStatelessSession().Wrap();
+        await RecreateAllGroups(session);
     }
 
     public async Task RecalculateStatsContractsForGroup(AnimeGroup group)

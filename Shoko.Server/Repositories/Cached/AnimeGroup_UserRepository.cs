@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using NutzCode.InMemoryIndex;
 using Shoko.Server.Databases;
 using Shoko.Server.Repositories.NHibernate;
@@ -133,7 +134,14 @@ public class AnimeGroup_UserRepository : BaseCachedRepository<AnimeGroup_User, i
         var groupUsers = GetAll().GroupBy(g => g.JMMUserID, g => g.AnimeGroupID);
 
         // Then, actually delete the AnimeGroup_Users
-        await Lock(async () => await session.CreateSQLQuery("DELETE FROM AnimeGroup_User WHERE AnimeGroup_UserID > 0").ExecuteUpdateAsync());
+        if (session is EfCoreSessionWrapper efSession)
+        {
+            await Lock(async () => await efSession.Context.AnimeGroup_User.ExecuteDeleteAsync());
+        }
+        else
+        {
+            await Lock(async () => await session.CreateSQLQuery("DELETE FROM AnimeGroup_User WHERE AnimeGroup_UserID > 0").ExecuteUpdateAsync());
+        }
 
         // Now, update the change trackers with all removed records
         foreach (var groupUser in groupUsers)

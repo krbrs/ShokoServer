@@ -1242,7 +1242,7 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
-    public async Task SQLite_AnimeGroupCreator_RecreateAllGroups_EfOnlyStillRequiresNhStatelessSession()
+    public async Task SQLite_AnimeGroupCreator_RecreateAllGroups_EfOnlyRecreatesGroupsWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
         var settingsProvider = Utils.ServiceContainer.GetRequiredService<ISettingsProvider>();
@@ -1277,10 +1277,26 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
         try
         {
             var creator = CreateAnimeGroupCreator();
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => creator.RecreateAllGroups());
+            await creator.RecreateAllGroups();
 
-            Assert.Contains("NH SessionFactory creation is disallowed", ex.Message);
-            Assert.Equal(sessionFactoryCreateCalls + 1, SQLite.SessionFactoryCreateCallCount);
+            var recreatedSeries = RepoFactory.AnimeSeries.GetByAnimeID(animeId);
+            Assert.NotNull(recreatedSeries);
+            Assert.True(recreatedSeries.AnimeGroupID > 0);
+
+            var recreatedGroup = RepoFactory.AnimeGroup.GetByID(recreatedSeries.AnimeGroupID);
+            Assert.NotNull(recreatedGroup);
+            Assert.Equal(recreatedSeries.Title, recreatedGroup.GroupName);
+            Assert.DoesNotContain(RepoFactory.AnimeGroup.GetAll(), group => group.GroupName == AnimeGroupCreator.TempGroupName);
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+            var persistedSeries = context.AnimeSeries.AsNoTracking().Single(a => a.AnimeSeriesID == recreatedSeries.AnimeSeriesID);
+            var persistedGroups = context.AnimeGroup.AsNoTracking().ToList();
+
+            Assert.Equal(recreatedSeries.AnimeGroupID, persistedSeries.AnimeGroupID);
+            Assert.Single(persistedGroups);
+            Assert.DoesNotContain(persistedGroups, group => group.GroupName == AnimeGroupCreator.TempGroupName);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }
         finally
         {
