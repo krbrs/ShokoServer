@@ -1751,6 +1751,88 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_ScanFileRepository_EfOnlyUsesDefaultWrapperWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var scanId = 970001 + Random.Shared.Next(1000);
+
+        RepoFactory.ScanFile.Save(new Shoko.Server.Models.Legacy.ScanFile
+        {
+            ScanID = scanId,
+            ImportFolderID = 1,
+            VideoLocal_Place_ID = 1,
+            FullName = $"scanfile-waiting-{Guid.NewGuid():N}.mkv",
+            FileSize = 100,
+            Status = Shoko.Server.Server.ScanFileStatus.Waiting,
+            CheckDate = DateTime.UtcNow.AddMinutes(-2),
+            Hash = string.Empty,
+            HashResult = string.Empty
+        });
+        RepoFactory.ScanFile.Save(new Shoko.Server.Models.Legacy.ScanFile
+        {
+            ScanID = scanId,
+            ImportFolderID = 1,
+            VideoLocal_Place_ID = 2,
+            FullName = $"scanfile-processed-{Guid.NewGuid():N}.mkv",
+            FileSize = 101,
+            Status = Shoko.Server.Server.ScanFileStatus.ProcessedOK,
+            CheckDate = DateTime.UtcNow.AddMinutes(-1),
+            Hash = string.Empty,
+            HashResult = string.Empty
+        });
+        RepoFactory.ScanFile.Save(new Shoko.Server.Models.Legacy.ScanFile
+        {
+            ScanID = scanId,
+            ImportFolderID = 1,
+            VideoLocal_Place_ID = 3,
+            FullName = $"scanfile-error-{Guid.NewGuid():N}.mkv",
+            FileSize = 102,
+            Status = Shoko.Server.Server.ScanFileStatus.ErrorInvalidHash,
+            CheckDate = DateTime.UtcNow,
+            Hash = string.Empty,
+            HashResult = string.Empty
+        });
+        RepoFactory.ScanFile.Save(new Shoko.Server.Models.Legacy.ScanFile
+        {
+            ScanID = scanId + 1,
+            ImportFolderID = 1,
+            VideoLocal_Place_ID = 4,
+            FullName = $"scanfile-other-scan-{Guid.NewGuid():N}.mkv",
+            FileSize = 103,
+            Status = Shoko.Server.Server.ScanFileStatus.Waiting,
+            CheckDate = DateTime.UtcNow,
+            Hash = string.Empty,
+            HashResult = string.Empty
+        });
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var waiting = RepoFactory.ScanFile.GetWaiting(scanId);
+            var allForScan = RepoFactory.ScanFile.GetByScanID(scanId);
+            var errors = RepoFactory.ScanFile.GetWithError(scanId);
+            var waitingCount = RepoFactory.ScanFile.GetWaitingCount(scanId);
+
+            var waitingFile = Assert.Single(waiting);
+            Assert.Equal(Shoko.Server.Server.ScanFileStatus.Waiting, waitingFile.Status);
+            Assert.Equal(3, allForScan.Count);
+            Assert.Single(errors);
+            Assert.Equal(Shoko.Server.Server.ScanFileStatus.ErrorInvalidHash, errors[0].Status);
+            Assert.Equal(1, waitingCount);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
