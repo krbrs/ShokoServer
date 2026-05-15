@@ -1657,7 +1657,7 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
-    public void SQLite_AnimeSeries_SaveExistingSeries_EfOnlyStillRequiresNhSessionFactory()
+    public void SQLite_AnimeSeries_SaveExistingSeries_EfOnlyUsesEfLookupWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
         var now = DateTime.UtcNow;
@@ -1697,9 +1697,19 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
         try
         {
             series.DateTimeUpdated = DateTime.UtcNow;
-            var ex = Assert.Throws<InvalidOperationException>(() => RepoFactory.AnimeSeries.Save(series));
-            Assert.Contains("SessionFactory", ex.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.True(SQLite.SessionFactoryCreateCallCount > sessionFactoryCreateCalls);
+            RepoFactory.AnimeSeries.Save(series);
+
+            var refreshedSeries = RepoFactory.AnimeSeries.GetByID(series.AnimeSeriesID);
+            Assert.NotNull(refreshedSeries);
+            Assert.Equal(series.AnimeSeriesID, refreshedSeries.AnimeSeriesID);
+            Assert.Equal(group.AnimeGroupID, refreshedSeries.AnimeGroupID);
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+            var persistedSeries = context.AnimeSeries.AsNoTracking().Single(a => a.AnimeSeriesID == series.AnimeSeriesID);
+            Assert.Equal(group.AnimeGroupID, persistedSeries.AnimeGroupID);
+
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }
         finally
         {

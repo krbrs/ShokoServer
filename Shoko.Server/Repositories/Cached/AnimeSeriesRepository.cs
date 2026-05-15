@@ -178,8 +178,19 @@ public class AnimeSeriesRepository : BaseCachedRepository<AnimeSeries, int>
                 s.Stop();
                 logger.Trace($"Saving Series {id} | Got Database Lock in {s.Elapsed.TotalSeconds:0.00###}s");
                 s.Restart();
-                using var session = _databaseFactory.SessionFactory.OpenSession();
-                var series = session.Get<AnimeSeries>(animeSeriesID);
+                AnimeSeries? series;
+                if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+                {
+                    using var context = GetDbContext();
+                    series = context.AnimeSeries
+                        .AsNoTracking()
+                        .SingleOrDefault(existingSeries => existingSeries.AnimeSeriesID == animeSeriesID);
+                }
+                else
+                {
+                    using var session = _databaseFactory.SessionFactory.OpenSession();
+                    series = session.Get<AnimeSeries>(animeSeriesID);
+                }
                 s.Stop();
                 logger.Trace($"Saving Series {id} | Got Series from Database in {s.Elapsed.TotalSeconds:0.00###}s");
                 s.Restart();
