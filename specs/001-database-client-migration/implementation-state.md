@@ -188,33 +188,23 @@ Current conclusion:
 
 #### Ranked Remaining Repository-specific NH Seams
 
-1. `AnimeEpisodeRepository`
-   - `GetWithMultipleReleases(...)`
-   - `GetWithDuplicateFiles(...)`
-   - why first:
-     - deterministic/local cached-domain queries
-     - still use `SessionFactory.OpenSession()` + `CreateSQLQuery(...)`
-     - clean SQLite EF-only guard characterization exists
-   - characterization test:
-     - `SQLite_AnimeEpisodeRepository_GetWithMultipleReleases_EfOnlyStillRequiresNhSessionFactory`
-2. `ScanFileRepository`
+1. `ScanFileRepository`
    - parameterless query helpers still use `SessionFactory.OpenSession()` + `session.Query<ScanFile>()`
-   - deterministic/local, but lower-value than `AnimeEpisodeRepository`
-3. `AniDB_MessageRepository`, `ScheduledUpdateRepository`, `AniDB_AnimeUpdateRepository`
+   - deterministic/local direct-repository seam
+2. `AniDB_MessageRepository`, `ScheduledUpdateRepository`, `AniDB_AnimeUpdateRepository`
    - still use `SessionFactory.OpenSession()` for parameterless query helpers
    - deterministic/local direct-repository seams
-4. `AniDB_GroupStatusRepository`, `AniDB_NotifyQueueRepository`, `AniDB_Anime_SimilarRepository`, `AniDB_Anime_StaffRepository`
+3. `AniDB_GroupStatusRepository`, `AniDB_NotifyQueueRepository`, `AniDB_Anime_SimilarRepository`, `AniDB_Anime_StaffRepository`
    - still use `OpenStatelessSession()` or NH delete/query paths
    - local, but narrower operational impact than the episode duplicate/multi-release queries
-5. TMDB direct repositories and optional/text sub-repositories
+4. TMDB direct repositories and optional/text sub-repositories
    - many parameterless lookup helpers still use `SessionFactory.OpenSession()`
    - lower priority because the proven startup/runtime path already reaches stable cached TMDB behavior without hitting these as the next blocker
 
 Updated next repository target:
 - `AnimeSeriesRepository.Save(existing series)` is now EF-safe in the SQLite EF-only path.
-- The next repository-specific NH migration target is `AnimeEpisodeRepository`, starting with the raw-SQL episode lookup methods:
-  - `GetWithMultipleReleases(...)`
-  - `GetWithDuplicateFiles(...)`
+- `AnimeEpisodeRepository.GetWithMultipleReleases(...)` and `GetWithDuplicateFiles(...)` are now EF-safe in the SQLite EF-only path.
+- The next repository-specific NH migration target is `ScanFileRepository`, followed by the remaining direct local lookup repositories that still open NH sessions in their parameterless query helpers.
 
 ## Recommended Next Migration Target
 

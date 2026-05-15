@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using NHibernate;
 using NutzCode.InMemoryIndex;
 using Shoko.Abstractions.Metadata.Enums;
@@ -96,23 +97,7 @@ public class AnimeEpisodeRepository : BaseCachedRepository<AnimeEpisode, int>
 
     public IEnumerable<AnimeEpisode> GetWithMultipleReleases(bool ignoreVariations, int? animeID = null)
     {
-        var ids = Lock(() =>
-        {
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            if (animeID.HasValue && animeID.Value > 0)
-            {
-                var animeQuery = ignoreVariations ? MultipleReleasesIgnoreVariationsWithAnimeQuery : MultipleReleasesCountVariationsWithAnimeQuery;
-                return session.CreateSQLQuery(animeQuery)
-                    .AddScalar("EpisodeID", NHibernateUtil.Int32)
-                    .SetParameter("animeID", animeID.Value)
-                    .List<int>();
-            }
-
-            var query = ignoreVariations ? MultipleReleasesIgnoreVariationsQuery : MultipleReleasesCountVariationsQuery;
-            return session.CreateSQLQuery(query)
-                .AddScalar("EpisodeID", NHibernateUtil.Int32)
-                .List<int>();
-        });
+        var ids = Lock(() => GetMultipleReleaseEpisodeIds(ignoreVariations, animeID));
 
         return ids
             .Select(GetByAniDBEpisodeID)
@@ -191,21 +176,7 @@ GROUP BY
 
     public IEnumerable<AnimeEpisode> GetWithDuplicateFiles(int? animeID = null)
     {
-        var ids = Lock(() =>
-        {
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            if (animeID.HasValue && animeID.Value > 0)
-            {
-                return session.CreateSQLQuery(DuplicateFilesWithAnimeQuery)
-                    .AddScalar("EpisodeID", NHibernateUtil.Int32)
-                    .SetParameter("animeID", animeID.Value)
-                    .List<int>();
-            }
-
-            return session.CreateSQLQuery(DuplicateFilesQuery)
-                .AddScalar("EpisodeID", NHibernateUtil.Int32)
-                .List<int>();
-        });
+        var ids = Lock(() => GetDuplicateFileEpisodeIds(animeID));
 
         return ids
             .Select(GetByAniDBEpisodeID)
@@ -215,6 +186,110 @@ GROUP BY
             .ThenBy(tuple => tuple.anidbEpisode!.EpisodeType)
             .ThenBy(tuple => tuple.anidbEpisode!.EpisodeNumber)
             .Select(tuple => tuple.episode!);
+    }
+
+    private List<int> GetMultipleReleaseEpisodeIds(bool ignoreVariations, int? animeID)
+    {
+        if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+        {
+            using var context = GetDbContext();
+            var videos = context.VideoLocal
+                .AsNoTracking()
+                .Where(video => video.Hash != string.Empty);
+
+            if (ignoreVariations)
+            {
+                videos = videos.Where(video => !video.IsVariation);
+            }
+
+            var crossReferences = context.CrossRef_File_Episode.AsNoTracking();
+            if (animeID.HasValue && animeID.Value > 0)
+            {
+                crossReferences = crossReferences.Where(xref => xref.AnimeID == animeID.Value);
+            }
+
+            return videos
+                .Join(
+                    crossReferences,
+                    video => video.Hash,
+                    xref => xref.Hash,
+                    (_, xref) => xref.EpisodeID)
+                .GroupBy(episodeId => episodeId)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToList();
+        }
+
+        using var session = _databaseFactory.SessionFactory.OpenSession();
+        if (animeID.HasValue && animeID.Value > 0)
+        {
+            var animeQuery = ignoreVariations ? MultipleReleasesIgnoreVariationsWithAnimeQuery : MultipleReleasesCountVariationsWithAnimeQuery;
+            return session.CreateSQLQuery(animeQuery)
+                .AddScalar("EpisodeID", NHibernateUtil.Int32)
+                .SetParameter("animeID", animeID.Value)
+                .List<int>()
+                .ToList();
+        }
+
+        var query = ignoreVariations ? MultipleReleasesIgnoreVariationsQuery : MultipleReleasesCountVariationsQuery;
+        return session.CreateSQLQuery(query)
+            .AddScalar("EpisodeID", NHibernateUtil.Int32)
+            .List<int>()
+            .ToList();
+    }
+
+    private List<int> GetDuplicateFileEpisodeIds(int? animeID)
+    {
+        if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+        {
+            using var context = GetDbContext();
+            var duplicatedVideoIds = context.VideoLocal_Place
+                .AsNoTracking()
+                .GroupBy(place => place.VideoID)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key);
+
+            var duplicatedVideos = context.VideoLocal
+                .AsNoTracking()
+                .Where(video => duplicatedVideoIds.Contains(video.VideoLocalID) && video.Hash != string.Empty)
+                .Select(video => new
+                {
+                    video.Hash,
+                    video.FileSize
+                });
+
+            var crossReferences = context.CrossRef_File_Episode.AsNoTracking();
+            if (animeID.HasValue && animeID.Value > 0)
+            {
+                crossReferences = crossReferences.Where(xref => xref.AnimeID == animeID.Value);
+            }
+
+            return duplicatedVideos
+                .Join(
+                    crossReferences,
+                    video => new { video.Hash, video.FileSize },
+                    xref => new { xref.Hash, xref.FileSize },
+                    (_, xref) => xref.EpisodeID)
+                .GroupBy(episodeId => episodeId)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToList();
+        }
+
+        using var session = _databaseFactory.SessionFactory.OpenSession();
+        if (animeID.HasValue && animeID.Value > 0)
+        {
+            return session.CreateSQLQuery(DuplicateFilesWithAnimeQuery)
+                .AddScalar("EpisodeID", NHibernateUtil.Int32)
+                .SetParameter("animeID", animeID.Value)
+                .List<int>()
+                .ToList();
+        }
+
+        return session.CreateSQLQuery(DuplicateFilesQuery)
+            .AddScalar("EpisodeID", NHibernateUtil.Int32)
+            .List<int>()
+            .ToList();
     }
 
     public IEnumerable<AnimeEpisode> GetMissing(bool collecting, int? animeID = null)

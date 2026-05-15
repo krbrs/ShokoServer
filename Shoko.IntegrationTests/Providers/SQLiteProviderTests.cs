@@ -1720,18 +1720,27 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
-    public void SQLite_AnimeEpisodeRepository_GetWithMultipleReleases_EfOnlyStillRequiresNhSessionFactory()
+    public void SQLite_AnimeEpisodeRepository_EfOnlyUsesEfLookupMethodsWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var data = SeedAnimeEpisodeLookupData();
         databaseFactory.CloseSessionFactory();
         var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
         SQLite.UseEfOnlyBootstrapForTests = true;
         SQLite.ThrowOnSessionFactoryCreateForTests = true;
         try
         {
-            var ex = Assert.Throws<InvalidOperationException>(() => RepoFactory.AnimeEpisode.GetWithMultipleReleases(ignoreVariations: true).ToList());
-            Assert.Contains("SessionFactory", ex.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.True(SQLite.SessionFactoryCreateCallCount > sessionFactoryCreateCalls);
+            var multipleReleases = RepoFactory.AnimeEpisode.GetWithMultipleReleases(ignoreVariations: true, animeID: data.AnimeId).ToList();
+            var duplicateFiles = RepoFactory.AnimeEpisode.GetWithDuplicateFiles(animeID: data.AnimeId).ToList();
+
+            var multipleReleaseEpisode = Assert.Single(multipleReleases);
+            var duplicateFileEpisode = Assert.Single(duplicateFiles);
+
+            Assert.Equal(data.MultipleReleaseEpisodeId, multipleReleaseEpisode.AniDB_EpisodeID);
+            Assert.Equal(data.DuplicateFilesEpisodeId, duplicateFileEpisode.AniDB_EpisodeID);
+            Assert.Equal(data.AnimeId, multipleReleaseEpisode.AniDB_Episode!.AnimeID);
+            Assert.Equal(data.AnimeId, duplicateFileEpisode.AniDB_Episode!.AnimeID);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }
         finally
         {
@@ -1925,5 +1934,228 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             services.GetRequiredService<AnimeGroupRepository>(),
             services.GetRequiredService<AnimeGroup_UserRepository>(),
             services.GetRequiredService<AnimeGroupService>());
+    }
+
+    private static (int AnimeId, int MultipleReleaseEpisodeId, int DuplicateFilesEpisodeId) SeedAnimeEpisodeLookupData()
+    {
+        var now = DateTime.UtcNow;
+        var animeId = 964001 + Random.Shared.Next(1000);
+        var multipleReleaseEpisodeId = 965001 + Random.Shared.Next(1000);
+        var duplicateFilesEpisodeId = 966001 + Random.Shared.Next(1000);
+
+        var group = new AnimeGroup
+        {
+            GroupName = $"episode-lookup-group-{Guid.NewGuid():N}",
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        RepoFactory.AnimeGroup.Save(group);
+
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = animeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2022, 3, 3),
+            MainTitle = $"episode-lookup-anime-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+
+        var series = new AnimeSeries
+        {
+            AniDB_ID = animeId,
+            AnimeGroupID = group.AnimeGroupID,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        RepoFactory.AnimeSeries.Save(series, false, true);
+
+        RepoFactory.AniDB_Episode.Save(new Shoko.Server.Models.AniDB.AniDB_Episode
+        {
+            EpisodeID = multipleReleaseEpisodeId,
+            AnimeID = animeId,
+            EpisodeNumber = 1,
+            EpisodeType = Shoko.Abstractions.Metadata.Enums.EpisodeType.Episode,
+            LengthSeconds = 1500,
+            AirDate = 20220303,
+            Rating = "0",
+            Votes = "0",
+            Description = string.Empty,
+            DateTimeUpdated = now
+        });
+        RepoFactory.AniDB_Episode.Save(new Shoko.Server.Models.AniDB.AniDB_Episode
+        {
+            EpisodeID = duplicateFilesEpisodeId,
+            AnimeID = animeId,
+            EpisodeNumber = 2,
+            EpisodeType = Shoko.Abstractions.Metadata.Enums.EpisodeType.Episode,
+            LengthSeconds = 1500,
+            AirDate = 20220310,
+            Rating = "0",
+            Votes = "0",
+            Description = string.Empty,
+            DateTimeUpdated = now
+        });
+
+        RepoFactory.AnimeEpisode.Save(new AnimeEpisode
+        {
+            AnimeSeriesID = series.AnimeSeriesID,
+            AniDB_EpisodeID = multipleReleaseEpisodeId,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        });
+        RepoFactory.AnimeEpisode.Save(new AnimeEpisode
+        {
+            AnimeSeriesID = series.AnimeSeriesID,
+            AniDB_EpisodeID = duplicateFilesEpisodeId,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        });
+
+        var folderA = new ShokoManagedFolder
+        {
+            Name = $"episode-lookup-folder-a-{Guid.NewGuid():N}",
+            Path = $"/tmp/episode-lookup-folder-a-{Guid.NewGuid():N}",
+            IsWatched = false
+        };
+        var folderB = new ShokoManagedFolder
+        {
+            Name = $"episode-lookup-folder-b-{Guid.NewGuid():N}",
+            Path = $"/tmp/episode-lookup-folder-b-{Guid.NewGuid():N}",
+            IsWatched = false
+        };
+        RepoFactory.ShokoManagedFolder.Save(folderA);
+        RepoFactory.ShokoManagedFolder.Save(folderB);
+
+        var multipleReleaseHashA = Guid.NewGuid().ToString("N");
+        var multipleReleaseHashB = Guid.NewGuid().ToString("N");
+        var duplicateHashA = Guid.NewGuid().ToString("N");
+        var duplicateHashB = Guid.NewGuid().ToString("N");
+
+        var multipleReleaseVideoA = new VideoLocal
+        {
+            DateTimeCreated = now,
+            DateTimeUpdated = now,
+            FileName = $"multiple-release-a-{Guid.NewGuid():N}.mkv",
+            FileSize = 1200,
+            Hash = multipleReleaseHashA,
+            HashSource = 0,
+            IsIgnored = false,
+            IsVariation = false,
+            MediaVersion = 0,
+            MyListID = 0
+        };
+        var multipleReleaseVideoB = new VideoLocal
+        {
+            DateTimeCreated = now,
+            DateTimeUpdated = now,
+            FileName = $"multiple-release-b-{Guid.NewGuid():N}.mkv",
+            FileSize = 1300,
+            Hash = multipleReleaseHashB,
+            HashSource = 0,
+            IsIgnored = false,
+            IsVariation = false,
+            MediaVersion = 0,
+            MyListID = 0
+        };
+        var duplicateVideoA = new VideoLocal
+        {
+            DateTimeCreated = now,
+            DateTimeUpdated = now,
+            FileName = $"duplicate-file-a-{Guid.NewGuid():N}.mkv",
+            FileSize = 2200,
+            Hash = duplicateHashA,
+            HashSource = 0,
+            IsIgnored = false,
+            IsVariation = true,
+            MediaVersion = 0,
+            MyListID = 0
+        };
+        var duplicateVideoB = new VideoLocal
+        {
+            DateTimeCreated = now,
+            DateTimeUpdated = now,
+            FileName = $"duplicate-file-b-{Guid.NewGuid():N}.mkv",
+            FileSize = 2300,
+            Hash = duplicateHashB,
+            HashSource = 0,
+            IsIgnored = false,
+            IsVariation = true,
+            MediaVersion = 0,
+            MyListID = 0
+        };
+        RepoFactory.VideoLocal.Save(multipleReleaseVideoA, updateEpisodes: false);
+        RepoFactory.VideoLocal.Save(multipleReleaseVideoB, updateEpisodes: false);
+        RepoFactory.VideoLocal.Save(duplicateVideoA, updateEpisodes: false);
+        RepoFactory.VideoLocal.Save(duplicateVideoB, updateEpisodes: false);
+
+        RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+        {
+            VideoID = duplicateVideoA.VideoLocalID,
+            ManagedFolderID = folderA.ID,
+            RelativePath = $"dup-a-1-{Guid.NewGuid():N}.mkv"
+        });
+        RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+        {
+            VideoID = duplicateVideoA.VideoLocalID,
+            ManagedFolderID = folderB.ID,
+            RelativePath = $"dup-a-2-{Guid.NewGuid():N}.mkv"
+        });
+        RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+        {
+            VideoID = duplicateVideoB.VideoLocalID,
+            ManagedFolderID = folderA.ID,
+            RelativePath = $"dup-b-1-{Guid.NewGuid():N}.mkv"
+        });
+        RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+        {
+            VideoID = duplicateVideoB.VideoLocalID,
+            ManagedFolderID = folderB.ID,
+            RelativePath = $"dup-b-2-{Guid.NewGuid():N}.mkv"
+        });
+
+        RepoFactory.CrossRef_File_Episode.Save(new Shoko.Server.Models.CrossReference.CrossRef_File_Episode
+        {
+            Hash = multipleReleaseHashA,
+            FileName = multipleReleaseVideoA.FileName,
+            FileSize = multipleReleaseVideoA.FileSize,
+            AnimeID = animeId,
+            EpisodeID = multipleReleaseEpisodeId,
+            Percentage = 100,
+            EpisodeOrder = 1
+        });
+        RepoFactory.CrossRef_File_Episode.Save(new Shoko.Server.Models.CrossReference.CrossRef_File_Episode
+        {
+            Hash = multipleReleaseHashB,
+            FileName = multipleReleaseVideoB.FileName,
+            FileSize = multipleReleaseVideoB.FileSize,
+            AnimeID = animeId,
+            EpisodeID = multipleReleaseEpisodeId,
+            Percentage = 100,
+            EpisodeOrder = 2
+        });
+        RepoFactory.CrossRef_File_Episode.Save(new Shoko.Server.Models.CrossReference.CrossRef_File_Episode
+        {
+            Hash = duplicateHashA,
+            FileName = duplicateVideoA.FileName,
+            FileSize = duplicateVideoA.FileSize,
+            AnimeID = animeId,
+            EpisodeID = duplicateFilesEpisodeId,
+            Percentage = 100,
+            EpisodeOrder = 1
+        });
+        RepoFactory.CrossRef_File_Episode.Save(new Shoko.Server.Models.CrossReference.CrossRef_File_Episode
+        {
+            Hash = duplicateHashB,
+            FileName = duplicateVideoB.FileName,
+            FileSize = duplicateVideoB.FileSize,
+            AnimeID = animeId,
+            EpisodeID = duplicateFilesEpisodeId,
+            Percentage = 100,
+            EpisodeOrder = 2
+        });
+
+        return (animeId, multipleReleaseEpisodeId, duplicateFilesEpisodeId);
     }
 }
