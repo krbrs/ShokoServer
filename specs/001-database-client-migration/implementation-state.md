@@ -193,7 +193,10 @@ Current conclusion:
    - no guarded EF query branch was needed because the NH usage was only bypassing existing cache state
 2. TMDB direct repositories and optional/text sub-repositories
    - many parameterless lookup helpers still use `SessionFactory.OpenSession()`
-   - lower priority because the proven startup/runtime path already reaches stable cached TMDB behavior without hitting these as the next blocker
+   - all inspected parameterless lookup helpers are already EF-first under the SQLite EF-only guard through `OpenSessionWrapper(useEntityFramework: true)`
+   - representative guarded coverage now exists across base, text, and optional TMDB direct repositories
+3. Remaining repository-specific NH work is no longer concentrated in the local AniDB/TMDB direct lookup surface
+   - the next seams are broader repository/service paths that still open NH explicitly outside these EF-first lookup helpers
 
 Updated next repository target:
 - `AnimeSeriesRepository.Save(existing series)` is now EF-safe in the SQLite EF-only path.
@@ -203,18 +206,18 @@ Updated next repository target:
 - The remaining stateless AniDB direct-repository cluster is EF-safe under the SQLite EF-only guard for repository-local lookup paths and `AniDB_NotifyQueue` delete paths.
 - `AniDB_GroupStatusRepository.DeleteForAnime(...)` crosses immediately into the action/job seam because it calls `RefreshAnimeStatsJob.Process()` inline, so it is not treated as a pure direct-repository seam.
 - `AniDB_CreatorRepository.GetByName(...)` and `AniDB_CharacterRepository.GetByName(...)` are now EF-safe in the SQLite EF-only path through cache indexes instead of NH session lookups.
-- The next repository-specific NH seam is the TMDB direct-repository lookup surface.
+- The TMDB direct-repository lookup surface is EF-safe in the SQLite EF-only path for the representative base/text/optional lookup methods now covered.
+- The next repository-specific NH seam is no longer this local direct lookup surface; the next remaining NH targets are broader explicit-session repository/service paths outside these guarded direct lookups.
 
 ## Recommended Next Migration Target
 
-The next best repository migration target is the TMDB direct-repository lookup surface.
+The next best migration target is the broader explicit-session NH surface outside the now-proven local lookup clusters.
 
-Why this seam next:
+Most notably:
 
-- It is now the clearest remaining repository-specific NH lookup cluster after the AniDB cached/direct local seams.
-- It stays deterministic and local.
-- It does not require live AniDB/network.
-- It can be characterized and reduced incrementally without broad runtime behavior changes.
+1. repository/service paths that still call `SessionFactory.OpenSession()` or `OpenStatelessSession()` directly outside EF-first wrappers
+2. action/job seams like `AniDB_GroupStatusRepository.DeleteForAnime(...)` that immediately cross into job processing
+3. TMDB or other repository methods not covered by the representative EF-first lookup characterization if they expose explicit-session behavior rather than plain local lookup
 
 ## Current Release Readiness
 

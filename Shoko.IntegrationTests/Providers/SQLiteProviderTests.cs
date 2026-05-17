@@ -2064,6 +2064,103 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_TmdbDirectLookupSurface_EfOnlyUsesDefaultWrapperWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var tmdbCompanyId = 990001 + Random.Shared.Next(1000);
+        var tmdbPersonId = 991001 + Random.Shared.Next(1000);
+        var tmdbShowId = 992001 + Random.Shared.Next(1000);
+        var tmdbEpisodeId = 993001 + Random.Shared.Next(1000);
+        var collectionId = $"collection-{Guid.NewGuid():N}";
+        var groupId = $"group-{Guid.NewGuid():N}";
+
+        RepoFactory.TMDB_Company.Save(new Shoko.Server.Models.TMDB.TMDB_Company
+        {
+            TmdbCompanyID = tmdbCompanyId,
+            Name = $"company-{Guid.NewGuid():N}",
+            CountryOfOrigin = "JP"
+        });
+
+        RepoFactory.TMDB_Person.Save(new Shoko.Server.Models.TMDB.TMDB_Person
+        {
+            TmdbPersonID = tmdbPersonId,
+            EnglishName = $"person-{Guid.NewGuid():N}",
+            EnglishBiography = "test biography",
+            CreatedAt = DateTime.UtcNow,
+            LastUpdatedAt = DateTime.UtcNow
+        });
+
+        RepoFactory.TMDB_Company_Entity.Save(new Shoko.Server.Models.TMDB.TMDB_Company_Entity
+        {
+            TmdbCompanyID = tmdbCompanyId,
+            TmdbEntityType = Shoko.Server.Server.ForeignEntityType.Show,
+            TmdbEntityID = tmdbShowId,
+            Ordering = 2,
+            ReleasedAt = new DateOnly(2024, 1, 15)
+        });
+
+        RepoFactory.TMDB_Title.Save(new Shoko.Server.Models.TMDB.TMDB_Title(
+            Shoko.Server.Server.ForeignEntityType.Person,
+            tmdbPersonId,
+            "Localized Person Name",
+            "en",
+            "US"));
+
+        RepoFactory.TMDB_AlternateOrdering_Episode.Save(new Shoko.Server.Models.TMDB.TMDB_AlternateOrdering_Episode
+        {
+            TmdbShowID = tmdbShowId,
+            TmdbEpisodeGroupCollectionID = collectionId,
+            TmdbEpisodeGroupID = groupId,
+            TmdbEpisodeID = tmdbEpisodeId,
+            SeasonNumber = 1,
+            EpisodeNumber = 3,
+            CreatedAt = DateTime.UtcNow,
+            LastUpdatedAt = DateTime.UtcNow
+        });
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var company = RepoFactory.TMDB_Company.GetByTmdbCompanyID(tmdbCompanyId);
+            var person = RepoFactory.TMDB_Person.GetByTmdbPersonID(tmdbPersonId);
+            var companyEntities = RepoFactory.TMDB_Company_Entity.GetByTmdbCompanyID(tmdbCompanyId);
+            var companyEntity = RepoFactory.TMDB_Company_Entity.GetByTmdbEntityTypeAndCompanyID(Shoko.Server.Server.ForeignEntityType.Show, tmdbCompanyId);
+            var entityByShow = RepoFactory.TMDB_Company_Entity.GetByTmdbEntityTypeAndID(Shoko.Server.Server.ForeignEntityType.Show, tmdbShowId);
+            var titles = RepoFactory.TMDB_Title.GetByParentTypeAndID(Shoko.Server.Server.ForeignEntityType.Person, tmdbPersonId);
+            var episodesByShow = RepoFactory.TMDB_AlternateOrdering_Episode.GetByTmdbShowID(tmdbShowId);
+            var episodeByCollectionAndId = RepoFactory.TMDB_AlternateOrdering_Episode.GetByEpisodeGroupCollectionAndEpisodeIDs(collectionId, tmdbEpisodeId);
+
+            Assert.NotNull(company);
+            Assert.Equal(tmdbCompanyId, company.TmdbCompanyID);
+            Assert.NotNull(person);
+            Assert.Equal(tmdbPersonId, person.TmdbPersonID);
+
+            Assert.Single(companyEntities);
+            Assert.Single(companyEntity);
+            Assert.Single(entityByShow);
+            Assert.Equal(tmdbShowId, companyEntities[0].TmdbEntityID);
+
+            Assert.Single(titles);
+            Assert.Equal("Localized Person Name", titles[0].Value);
+
+            Assert.Single(episodesByShow);
+            Assert.NotNull(episodeByCollectionAndId);
+            Assert.Equal(groupId, episodeByCollectionAndId.TmdbEpisodeGroupID);
+
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
