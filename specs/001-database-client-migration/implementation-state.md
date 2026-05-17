@@ -132,11 +132,13 @@ Status:
      - `SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyUsesWrapperWithoutNhSessionFactory`
 2. `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`
    - deterministic/local
-   - explicit NH session/transaction orchestration around `VideoLocal` / `VideoLocal_Place` deletion
-   - next follow-up seam, because `ActionService` now delegates through an EF-safe wrapper path but `VideoService` still exposes raw NH entrypoints outside that guarded call chain
+   - now EF-safe in the SQLite EF-only path via wrapper-based session opening and the existing `ISessionWrapper` cleanup overload
+   - characterization tests:
+     - `SQLite_VideoService_RemoveRecord_EfOnlyUsesWrapperWithoutNhSessionFactory`
+     - `SQLite_VideoService_RemoveManagedFolder_EfOnlyUsesWrapperWithoutNhSessionFactory`
 3. `Scanner.DeleteAllErroredFiles()`
    - deterministic/local
-   - still opens NH explicitly, but is less central than the `ActionService` / `VideoService` cleanup path
+   - now the next deterministic local explicit-session seam after the `ActionService` / `VideoService` cleanup path
 4. live provider/network-adjacent orchestration
    - runtime-important, but intentionally lower priority while offline/local seams remain
 5. `DatabaseFixes` and provider DB maintenance code
@@ -237,17 +239,15 @@ Updated next repository target:
 
 ## Recommended Next Migration Target
 
-The next best migration target is `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`.
+The next best migration target is `Scanner.DeleteAllErroredFiles()`.
 
 Why this seam next:
 
 - deterministic and local
 - no live AniDB/provider dependency
-- deterministic and local
-- no live AniDB/provider dependency
-- still exposes explicit NH session/transaction entrypoints directly
-- sits immediately after the now-migrated `ActionService.RemoveRecordsWithoutPhysicalFiles(...)` seam
-- should reduce the remaining file-removal explicit-session surface without widening into network/provider work
+- still opens NH explicitly in a contained cleanup path
+- sits immediately after the now-migrated `ActionService` / `VideoService` explicit-session cleanup seams
+- should reduce another local maintenance/runtime seam without widening into provider/network work
 
 ## Current Release Readiness
 

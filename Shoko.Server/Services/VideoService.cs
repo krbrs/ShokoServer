@@ -651,63 +651,11 @@ public class VideoService : IVideoService
     {
         _logger.LogInformation("Removing VideoLocal_Place record for: {Place}", place.Path ?? place.ID.ToString());
         var seriesToUpdate = new List<AnimeSeries>();
-        var v = place.VideoLocal;
         var scheduler = await _schedulerFactory.GetScheduler();
-
-        using (var session = _databaseFactory.SessionFactory.OpenSession())
-        {
-            if (v?.Places?.Count <= 1)
-            {
-                if (updateMyListStatus)
-                    await ScheduleRemovalFromMyList(v);
-
-                try
-                {
-                    ShokoEventHandler.Instance.OnFileDeleted(place.ManagedFolder!, place, v);
-                }
-                catch
-                {
-                    // ignore
-                }
-
-                BaseRepository.Lock(session, s =>
-                {
-                    using var transaction = s.BeginTransaction();
-                    _videoLocalPlaceRepository.DeleteWithOpenTransaction(s, place);
-
-                    seriesToUpdate.AddRange(
-                        v
-                            .AnimeEpisodes
-                            .DistinctBy(a => a.AnimeSeriesID)
-                            .Select(a => a.AnimeSeries)
-                            .WhereNotNull()
-                    );
-                    _videoLocalRepository.DeleteWithOpenTransaction(s, v);
-                    transaction.Commit();
-                });
-            }
-            else
-            {
-                if (v is not null)
-                {
-                    try
-                    {
-                        ShokoEventHandler.Instance.OnFileDeleted(place.ManagedFolder!, place, v);
-                    }
-                    catch
-                    {
-                        // ignore
-                    }
-                }
-
-                BaseRepository.Lock(session, s =>
-                {
-                    using var transaction = s.BeginTransaction();
-                    _videoLocalPlaceRepository.DeleteWithOpenTransaction(s, place);
-                    transaction.Commit();
-                });
-            }
-        }
+        using var session = _databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests
+            ? _databaseFactory.OpenSessionWrapper(useEntityFramework: true)
+            : _databaseFactory.SessionFactory.OpenSession().Wrap();
+        await RemoveRecordWithOpenTransaction(session, place, seriesToUpdate, updateMyListStatus);
 
         await Task.WhenAll(seriesToUpdate.Select(a => scheduler.StartJob<RefreshAnimeStatsJob>(b => b.AnimeID = a.AniDB_ID)));
     }
@@ -907,7 +855,9 @@ public class VideoService : IVideoService
         _logger.LogInformation("Deleting {VidsCount} video local records", videos.Count);
 
         var affectedSeries = new HashSet<AnimeSeries>();
-        using var session = _databaseFactory.SessionFactory.OpenSession();
+        using var session = _databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests
+            ? _databaseFactory.OpenSessionWrapper(useEntityFramework: true)
+            : _databaseFactory.SessionFactory.OpenSession().Wrap();
         foreach (var vid in videos)
             await RemoveRecordWithOpenTransaction(session, vid, affectedSeries, removeMyList);
 

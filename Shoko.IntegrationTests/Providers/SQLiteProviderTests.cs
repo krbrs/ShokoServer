@@ -2186,6 +2186,153 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public async Task SQLite_VideoService_RemoveRecord_EfOnlyUsesWrapperWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var videoService = (VideoService)Utils.ServiceContainer.GetRequiredService<IVideoService>();
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-remove-record-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "remove-record-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite RemoveRecord Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = false
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var video = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = Path.GetFileName(relativePath),
+                FileSize = new FileInfo(absolutePath).Length,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = 0,
+                MyListID = 0
+            };
+            RepoFactory.VideoLocal.Save(video, updateEpisodes: false);
+
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = relativePath,
+                VideoID = video.VideoLocalID,
+            });
+
+            var persistedPlace = RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID);
+            Assert.NotNull(persistedPlace);
+
+            databaseFactory.CloseSessionFactory();
+            var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+            SQLite.UseEfOnlyBootstrapForTests = true;
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+            try
+            {
+                await videoService.RemoveRecord(persistedPlace!, updateMyListStatus: false);
+
+                Assert.Null(RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID));
+                Assert.Null(RepoFactory.VideoLocal.GetByID(video.VideoLocalID));
+                Assert.NotNull(RepoFactory.ShokoManagedFolder.GetByID(folder.ID));
+                Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+            }
+            finally
+            {
+                SQLite.ThrowOnSessionFactoryCreateForTests = false;
+                SQLite.UseEfOnlyBootstrapForTests = false;
+                databaseFactory.CloseSessionFactory();
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_VideoService_RemoveManagedFolder_EfOnlyUsesWrapperWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var videoService = (VideoService)Utils.ServiceContainer.GetRequiredService<IVideoService>();
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-remove-folder-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "remove-folder-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite RemoveManagedFolder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = false
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var video = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = Path.GetFileName(relativePath),
+                FileSize = new FileInfo(absolutePath).Length,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = 0,
+                MyListID = 0
+            };
+            RepoFactory.VideoLocal.Save(video, updateEpisodes: false);
+
+            RepoFactory.VideoLocalPlace.Save(new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = relativePath,
+                VideoID = video.VideoLocalID,
+            });
+
+            databaseFactory.CloseSessionFactory();
+            var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+            SQLite.UseEfOnlyBootstrapForTests = true;
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+            try
+            {
+                await videoService.RemoveManagedFolder(folder, keepRecords: false, removeMyList: false);
+
+                Assert.Null(RepoFactory.ShokoManagedFolder.GetByID(folder.ID));
+                Assert.Null(RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID));
+                Assert.Null(RepoFactory.VideoLocal.GetByID(video.VideoLocalID));
+                Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+            }
+            finally
+            {
+                SQLite.ThrowOnSessionFactoryCreateForTests = false;
+                SQLite.UseEfOnlyBootstrapForTests = false;
+                databaseFactory.CloseSessionFactory();
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
