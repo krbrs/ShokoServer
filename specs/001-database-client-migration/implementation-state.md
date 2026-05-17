@@ -93,7 +93,18 @@ Status:
   - still uses `SessionFactory.OpenSession()`
   - still depends on `ISessionWrapper` and `CreateSQLQuery(...)`
   - key file: [AnimeGroupCreator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AnimeGroupCreator.cs)
+  - already-fixed guarded paths in this seam:
+    - `GetOrCreateSingleGroupForSeries(...)`
+    - `RecalculateStatsContractsForGroup(...)`
+    - `RecreateAllGroups(...)`
+  - remaining NH inside this seam is concentrated in:
+    - `ClearGroupsAndDependencies(...)` NH fallback branch
+    - public non-guarded `OpenStatelessSession().Wrap()` / `OpenSession().Wrap()` entrypoints
 - `AutoAnimeGroupCalculator`
+  - guarded SQLite path is already EF-safe through `CreateWithEf(...)`
+  - remaining NH is in the default/non-guarded creation path:
+    - `Create(...)`
+    - `CreateFromServerSettings()`
   - still uses `SessionFactory.OpenSession()`
   - still uses NH SQL projection via `CreateSQLQuery(...)` and `NHibernateUtil.*`
   - key file: [AutoAnimeGroupCalculator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AutoAnimeGroupCalculator.cs)
@@ -108,6 +119,9 @@ Status:
 Status:
 - This is the first broad deterministic local runtime area still carrying explicit NH after the proven cached/offline file path.
 - The next meaningful target inside it is no longer a tiny repository query; it is the broader grouping/stat path around `AnimeGroupCreator` and `AutoAnimeGroupCalculator`.
+- Smallest safe next implementation slice inside this broad seam:
+  - consolidate the relation-loading path behind `AutoAnimeGroupCalculator.Create(...)` as the single source of grouping graph construction for both guarded and default paths
+  - then re-thread `AnimeGroupCreator` callers through that seam instead of tackling all group recreation/stat persistence at once
 
 ### 4. Action / Job Path
 
@@ -134,6 +148,8 @@ Status:
    - no live provider/network dependency
    - still contains explicit NH session/stateless-session orchestration and raw SQL
    - already characterized by the existing grouping/stat test set
+   - smallest proposed slice:
+     - `AutoAnimeGroupCalculator.Create(...)` relation-loading and graph materialization seam
 2. intentional compatibility fallback: parameterless `BaseCachedRepository.Populate()`
    - deterministic/local
    - still intentionally NH-backed
@@ -249,6 +265,7 @@ Why this seam next:
 - the narrow `AnimeSeriesRepository` maintenance query surface is now covered
 - there is no new clearly small deterministic repository/service seam left besides the intentional `BaseCachedRepository.Populate()` fallback
 - the remaining high-value work is the already-characterized broad grouping/stat area rather than another isolated helper/query
+- inside that area, the smallest safe next slice is the relation-loading and graph-construction seam in `AutoAnimeGroupCalculator.Create(...)`, not the full `AnimeGroupCreator` recreation/stat persistence flow
 
 ## Current Release Readiness
 
