@@ -1324,6 +1324,139 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public async Task SQLite_AnimeGroupCreator_ClearGroupsAndDependencies_EfOnlyClearsGroupsAndRebindsSeriesWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var now = DateTime.UtcNow;
+
+        var tempGroup = new AnimeGroup
+        {
+            GroupName = AnimeGroupCreator.TempGroupName,
+            Description = AnimeGroupCreator.TempGroupName,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        var staleGroupA = new AnimeGroup
+        {
+            GroupName = $"clear-stale-a-{Guid.NewGuid():N}",
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        var staleGroupB = new AnimeGroup
+        {
+            GroupName = $"clear-stale-b-{Guid.NewGuid():N}",
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        RepoFactory.AnimeGroup.Save(tempGroup);
+        RepoFactory.AnimeGroup.Save(staleGroupA);
+        RepoFactory.AnimeGroup.Save(staleGroupB);
+
+        var user = new JMMUser
+        {
+            Username = $"clear-groups-user-{Guid.NewGuid():N}",
+            Password = "password",
+            IsAdmin = 1
+        };
+        RepoFactory.JMMUser.Save(user);
+
+        var animeIds = new[]
+        {
+            928001 + Random.Shared.Next(1000),
+            929001 + Random.Shared.Next(1000)
+        };
+
+        for (var index = 0; index < animeIds.Length; index++)
+        {
+            RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+            {
+                AnimeID = animeIds[index],
+                AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+                AirDate = new DateTime(2020, 1, index + 1),
+                MainTitle = $"clear-groups-anime-{index}-{Guid.NewGuid():N}",
+                AllTitles = string.Empty,
+                AllTags = string.Empty,
+                Description = string.Empty
+            });
+        }
+
+        RepoFactory.AnimeSeries.Save(new AnimeSeries
+        {
+            AniDB_ID = animeIds[0],
+            AnimeGroupID = staleGroupA.AnimeGroupID,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        }, false, true);
+        RepoFactory.AnimeSeries.Save(new AnimeSeries
+        {
+            AniDB_ID = animeIds[1],
+            AnimeGroupID = staleGroupB.AnimeGroupID,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        }, false, true);
+
+        RepoFactory.AnimeGroup_User.Save(new AnimeGroup_User
+        {
+            AnimeGroupID = staleGroupA.AnimeGroupID,
+            JMMUserID = user.JMMUserID
+        });
+        RepoFactory.AnimeGroup_User.Save(new AnimeGroup_User
+        {
+            AnimeGroupID = staleGroupB.AnimeGroupID,
+            JMMUserID = user.JMMUserID
+        });
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var creator = CreateAnimeGroupCreator();
+            var clearMethod = typeof(AnimeGroupCreator).GetMethod("ClearGroupsAndDependencies", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(clearMethod);
+
+            using var session = databaseFactory.OpenSessionWrapper(useEntityFramework: true);
+            using var transaction = session.BeginTransaction();
+            var clearTask = (Task)clearMethod.Invoke(creator, new object[] { session, tempGroup.AnimeGroupID });
+            await clearTask;
+            await transaction.CommitAsync();
+
+            Assert.Empty(RepoFactory.AnimeSeries.GetAll());
+
+            var cachedGroups = RepoFactory.AnimeGroup.GetAll();
+            Assert.DoesNotContain(cachedGroups, group => group.AnimeGroupID == staleGroupA.AnimeGroupID);
+            Assert.DoesNotContain(cachedGroups, group => group.AnimeGroupID == staleGroupB.AnimeGroupID);
+            Assert.Contains(cachedGroups, group => group.AnimeGroupID == tempGroup.AnimeGroupID);
+            Assert.Empty(RepoFactory.AnimeGroup_User.GetAll());
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+            var animeIdList = animeIds.ToList();
+            var persistedSeries = context.AnimeSeries
+                .AsNoTracking()
+                .Where(series => animeIdList.Contains(series.AniDB_ID))
+                .ToList();
+            var persistedGroups = context.AnimeGroup.AsNoTracking().ToList();
+            var persistedGroupUsers = context.AnimeGroup_User.AsNoTracking().ToList();
+
+            Assert.Equal(2, persistedSeries.Count);
+            Assert.All(persistedSeries, series => Assert.Equal(tempGroup.AnimeGroupID, series.AnimeGroupID));
+            Assert.Contains(persistedGroups, group => group.AnimeGroupID == tempGroup.AnimeGroupID);
+            Assert.DoesNotContain(persistedGroups, group => group.AnimeGroupID == staleGroupA.AnimeGroupID);
+            Assert.DoesNotContain(persistedGroups, group => group.AnimeGroupID == staleGroupB.AnimeGroupID);
+            Assert.Empty(persistedGroupUsers);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_AnimeGroupCreator_RecreateAllGroups_EfOnlyRecreatesGroupsWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();

@@ -95,10 +95,10 @@ Status:
   - key file: [AnimeGroupCreator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AnimeGroupCreator.cs)
   - already-fixed guarded paths in this seam:
     - `GetOrCreateSingleGroupForSeries(...)`
+    - `ClearGroupsAndDependencies(...)`
     - `RecalculateStatsContractsForGroup(...)`
     - `RecreateAllGroups(...)`
   - remaining NH inside this seam is concentrated in:
-    - `ClearGroupsAndDependencies(...)` NH fallback branch
     - public non-guarded `OpenStatelessSession().Wrap()` / `OpenSession().Wrap()` entrypoints
 - `AutoAnimeGroupCalculator`
   - relation-loading and graph materialization are now unified behind the EF/provider-neutral projection path
@@ -116,7 +116,7 @@ Status:
 - This is the first broad deterministic local runtime area still carrying explicit NH after the proven cached/offline file path.
 - The next meaningful target inside it is no longer a tiny repository query; it is the broader grouping/stat path around `AnimeGroupCreator` and `AutoAnimeGroupCalculator`.
 - Smallest safe next implementation slice inside this broad seam:
-  - finish the remaining `AnimeGroupCreator` NH orchestration edges after relation loading, starting with the explicit NH fallback branches and non-guarded wrapper entrypoints
+  - finish the remaining `AnimeGroupCreator` NH orchestration edges after relation loading, starting with the non-guarded wrapper entrypoints and staged transaction boundaries
   - keep stat persistence and cache lifecycle semantics unchanged while reducing session-opening dependence
 
 ### 4. Action / Job Path
@@ -145,7 +145,7 @@ Status:
    - still contains explicit NH session/stateless-session orchestration and raw SQL
    - already characterized by the existing grouping/stat test set
    - smallest proposed slice:
-     - `AnimeGroupCreator` explicit NH orchestration fallback branches now that relation loading is unified
+     - `AnimeGroupCreator.RecalculateStatsContractsForGroup(...)` non-guarded session-opening path and phase boundaries, with current partial-persistence semantics preserved
 2. intentional compatibility fallback: parameterless `BaseCachedRepository.Populate()`
    - deterministic/local
    - still intentionally NH-backed

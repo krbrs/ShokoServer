@@ -106,24 +106,13 @@ public class AnimeGroupCreator
 
         await _animeGroupUserRepo.DeleteAll(session);
         await _animeGroupRepo.DeleteAll(session, tempGroupId);
-        if (session is EfCoreSessionWrapper efSession)
+        var seriesToReset = _animeSeriesRepo.GetAll();
+        foreach (var series in seriesToReset)
         {
-            await BaseRepository.Lock(async () =>
-            {
-                await efSession.Context.AnimeSeries.ExecuteUpdateAsync(setters => setters
-                    .SetProperty(series => series.AnimeGroupID, tempGroupId));
-            });
+            series.AnimeGroupID = tempGroupId;
         }
-        else
-        {
-            await BaseRepository.Lock(async () =>
-            {
-                await session.CreateSQLQuery(@"
-                UPDATE AnimeSeries SET AnimeGroupID = :tempGroupId;")
-                    .SetInt32("tempGroupId", tempGroupId)
-                    .ExecuteUpdateAsync();
-            });
-        }
+
+        await _animeSeriesRepo.UpdateBatch(session, seriesToReset);
 
         // We've deleted/modified all AnimeSeries/GroupFilter records, so update caches to reflect that
         _animeSeriesRepo.ClearCache();
