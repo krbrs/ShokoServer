@@ -507,9 +507,7 @@ public class AnimeGroupCreator
     {
         var useEfOnlySession = _databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests;
         var groups = new List<AnimeGroup> { group };
-        using var session = useEfOnlySession
-            ? _databaseFactory.OpenSessionWrapper(useEntityFramework: true)
-            : _databaseFactory.SessionFactory.OpenSession().Wrap();
+        using var session = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
         var series = group.AllSeries;
         // recalculate series
         _logger.LogInformation("Recalculating Series Stats and Contracts for Group: {Name} ({ID})", group.GroupName, group.AnimeGroupID);
