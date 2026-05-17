@@ -1833,6 +1833,47 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_AnimeSeriesRepository_EfOnlyUsesEfMaintenanceQueriesWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var baselineMultipleReleaseIds = RepoFactory.AnimeSeries.GetWithMultipleReleases(ignoreVariations: true)
+            .Select(series => series.AniDB_ID)
+            .ToHashSet();
+        var baselineDuplicateFileIds = RepoFactory.AnimeSeries.GetWithDuplicateFiles()
+            .Select(series => series.AniDB_ID)
+            .ToHashSet();
+
+        var data = SeedAnimeEpisodeLookupData();
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var multipleReleases = RepoFactory.AnimeSeries.GetWithMultipleReleases(ignoreVariations: true)
+                .Select(series => series.AniDB_ID)
+                .ToHashSet();
+            var duplicateFiles = RepoFactory.AnimeSeries.GetWithDuplicateFiles()
+                .Select(series => series.AniDB_ID)
+                .ToHashSet();
+
+            var newMultipleReleaseIds = multipleReleases.Except(baselineMultipleReleaseIds).ToHashSet();
+            var newDuplicateFileIds = duplicateFiles.Except(baselineDuplicateFileIds).ToHashSet();
+
+            Assert.Equal([data.AnimeId], newMultipleReleaseIds);
+            Assert.Equal([data.AnimeId], newDuplicateFileIds);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public void SQLite_AnimeEpisodeRepository_EfOnlyUsesEfLookupMethodsWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();

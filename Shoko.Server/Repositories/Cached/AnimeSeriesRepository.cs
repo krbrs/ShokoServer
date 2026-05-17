@@ -364,6 +364,30 @@ public class AnimeSeriesRepository : BaseCachedRepository<AnimeSeries, int>
     {
         var ids = Lock(() =>
         {
+            if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+            {
+                using var context = GetDbContext();
+                var videoQuery = context.VideoLocal
+                    .AsNoTracking()
+                    .Where(video => video.Hash != string.Empty);
+                if (ignoreVariations)
+                {
+                    videoQuery = videoQuery.Where(video => !video.IsVariation);
+                }
+
+                return videoQuery
+                    .Join(
+                        context.CrossRef_File_Episode.AsNoTracking(),
+                        video => video.Hash,
+                        xref => xref.Hash,
+                        (video, xref) => new { xref.AnimeID, xref.EpisodeID })
+                    .GroupBy(entry => new { entry.AnimeID, entry.EpisodeID })
+                    .Where(group => group.Count() > 1)
+                    .Select(group => group.Key.AnimeID)
+                    .Distinct()
+                    .ToList();
+            }
+
             using var session = _databaseFactory.SessionFactory.OpenSession();
 
             var query = ignoreVariations ? MultipleReleasesIgnoreVariationsQuery : MultipleReleasesCountVariationsQuery;
@@ -414,6 +438,27 @@ GROUP BY
     {
         var ids = Lock(() =>
         {
+            if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+            {
+                using var context = GetDbContext();
+                var duplicateVideoIds = context.VideoLocal_Place
+                    .AsNoTracking()
+                    .GroupBy(place => place.VideoID)
+                    .Where(group => group.Count() > 1)
+                    .Select(group => group.Key);
+
+                return context.VideoLocal
+                    .AsNoTracking()
+                    .Where(video => duplicateVideoIds.Contains(video.VideoLocalID) && video.Hash != string.Empty)
+                    .Join(
+                        context.CrossRef_File_Episode.AsNoTracking(),
+                        video => new { video.Hash, video.FileSize },
+                        xref => new { xref.Hash, xref.FileSize },
+                        (video, xref) => xref.AnimeID)
+                    .Distinct()
+                    .ToList();
+            }
+
             using var session = _databaseFactory.SessionFactory.OpenSession();
 
             return session.CreateSQLQuery(DuplicateFilesQuery)
