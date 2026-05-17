@@ -435,10 +435,19 @@ GROUP BY
     {
         var ids = Lock(() =>
         {
+            if (_databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests)
+            {
+                using var context = GetDbContext();
+                var query = context.AnimeSeries.AsNoTracking();
+                return collecting
+                    ? query.Where(series => series.MissingEpisodeCountGroups > 0).Select(series => series.AniDB_ID).ToList()
+                    : query.Where(series => series.MissingEpisodeCount > 0).Select(series => series.AniDB_ID).ToList();
+            }
+
             using var session = _databaseFactory.SessionFactory.OpenSession();
 
-            var query = collecting ? MissingEpisodesCollectingQuery : MissingEpisodesQuery;
-            return session.CreateSQLQuery(query)
+            var queryText = collecting ? MissingEpisodesCollectingQuery : MissingEpisodesQuery;
+            return session.CreateSQLQuery(queryText)
                 .AddScalar("AniDB_ID", NHibernateUtil.Int32)
                 .List<int>();
         });
