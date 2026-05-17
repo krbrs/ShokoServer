@@ -1724,6 +1724,60 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_AnimeSeriesRepository_GetWithMissingEpisodes_EfOnlyStillRequiresNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var now = DateTime.UtcNow;
+        var group = new AnimeGroup
+        {
+            GroupName = $"series-missing-episodes-group-{Guid.NewGuid():N}",
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        RepoFactory.AnimeGroup.Save(group);
+
+        var animeId = 963501 + Random.Shared.Next(1000);
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = animeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2022, 3, 3),
+            MainTitle = $"series-missing-episodes-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+
+        var series = new AnimeSeries
+        {
+            AniDB_ID = animeId,
+            AnimeGroupID = group.AnimeGroupID,
+            MissingEpisodeCount = 1,
+            MissingEpisodeCountGroups = 2,
+            DateTimeCreated = now,
+            DateTimeUpdated = now
+        };
+        RepoFactory.AnimeSeries.Save(series, false, true);
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => RepoFactory.AnimeSeries.GetWithMissingEpisodes(collecting: true).ToList());
+            Assert.Contains("SessionFactory", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(SQLite.SessionFactoryCreateCallCount > sessionFactoryCreateCalls);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public void SQLite_AnimeEpisodeRepository_EfOnlyUsesEfLookupMethodsWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();

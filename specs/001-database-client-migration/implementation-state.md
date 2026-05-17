@@ -86,7 +86,7 @@ Status:
 - This path is intentionally unproven in the offline SQLite coverage.
 - This is a runtime/provider boundary, not the next best NH migration target.
 
-### 3. Grouping / Stat Calculation Path
+### 3. Deterministic / Local but Broad
 
 - `AnimeGroupCreator`
   - still uses `SessionFactory.OpenStatelessSession()`
@@ -100,10 +100,15 @@ Status:
 - `AnimeSeriesRepository`
   - still contains NH-backed query and save/update paths used by grouping/stat flows
   - `OpenSession()` and `CreateSQLQuery(...)` remain in several series maintenance queries
+  - next narrow boundary in this surface:
+    - `GetWithMissingEpisodes(bool collecting)`
+    - neighboring raw-SQL maintenance list methods
+  - characterization test:
+    - `SQLite_AnimeSeriesRepository_GetWithMissingEpisodes_EfOnlyStillRequiresNhSessionFactory`
 
 Status:
-- This is the first large deterministic local runtime area that is still NH-heavy after the proven cached/offline file path.
-- This is the best next migration target.
+- This is the first broad deterministic local runtime area still carrying explicit NH after the proven cached/offline file path.
+- The smallest next target inside it is the remaining `AnimeSeriesRepository` raw-SQL maintenance query surface rather than the full grouping engine at once.
 
 ### 4. Action / Job Path
 
@@ -124,26 +129,24 @@ Status:
 
 #### Ranked Explicit-session Frontier
 
-1. `ActionService.RemoveRecordsWithoutPhysicalFiles(...)`
+1. `AnimeSeriesRepository` raw-SQL maintenance query surface
    - deterministic/local
    - no live provider/network dependency
-   - now EF-safe in the SQLite EF-only path via `OpenSessionWrapper(useEntityFramework: true)`
-   - characterization test:
-     - `SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyUsesWrapperWithoutNhSessionFactory`
-2. `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`
+   - still opens NH directly for maintenance list queries
+   - first proven boundary:
+     - `SQLite_AnimeSeriesRepository_GetWithMissingEpisodes_EfOnlyStillRequiresNhSessionFactory`
+2. `ActionService.RemoveRecordsWithoutPhysicalFiles(...)`
    - deterministic/local
-   - now EF-safe in the SQLite EF-only path via wrapper-based session opening and the existing `ISessionWrapper` cleanup overload
-   - characterization tests:
-     - `SQLite_VideoService_RemoveRecord_EfOnlyUsesWrapperWithoutNhSessionFactory`
-     - `SQLite_VideoService_RemoveManagedFolder_EfOnlyUsesWrapperWithoutNhSessionFactory`
-3. `Scanner.DeleteAllErroredFiles()`
+   - now EF-safe in the SQLite EF-only path
+3. `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`
    - deterministic/local
-   - now EF-safe in the SQLite EF-only path via wrapper-based session opening and the existing `VideoService.RemoveAndDeleteFileWithOpenTransaction(ISessionWrapper, ...)` overload
-   - characterization test:
-     - `SQLite_Scanner_DeleteAllErroredFiles_EfOnlyUsesWrapperWithoutNhSessionFactory`
-4. live provider/network-adjacent orchestration
+   - now EF-safe in the SQLite EF-only path
+4. `Scanner.DeleteAllErroredFiles()`
+   - deterministic/local
+   - now EF-safe in the SQLite EF-only path
+5. live provider/network-adjacent orchestration
    - runtime-important, but intentionally lower priority while offline/local seams remain
-5. `DatabaseFixes` and provider DB maintenance code
+6. `DatabaseFixes` and provider DB maintenance code
    - explicit NH-heavy, but not the next runtime migration target
 
 ### 5. Database Maintenance Path
@@ -241,15 +244,15 @@ Updated next repository target:
 
 ## Recommended Next Migration Target
 
-The next best migration target is the next broader explicit-session repository/service seam outside these local cleanup paths.
+The next best migration target is the `AnimeSeriesRepository` raw-SQL maintenance query surface, starting with `GetWithMissingEpisodes(bool collecting)`.
 
 Why this seam next:
 
 - deterministic and local
 - no live AniDB/provider dependency
 - the smallest local cleanup seams (`ActionService`, `VideoService`, `Scanner.DeleteAllErroredFiles`) are now covered in the guarded SQLite path
-- the remaining NH risk frontier is shifting back toward broader explicit-session repository/service orchestration rather than isolated cleanup helpers
-- the next target should be chosen from the remaining explicit-session inventory based on deterministic local coverage potential
+- `AnimeSeriesRepository` still contains deterministic NH-only maintenance list queries that are narrower than reopening the full grouping/stat engine
+- migrating this query surface should reduce a real remaining runtime NH dependency without widening into provider/network or maintenance infrastructure
 
 ## Current Release Readiness
 
