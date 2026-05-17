@@ -1292,9 +1292,11 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
             var persistedSeries = context.AnimeSeries.AsNoTracking().Single(a => a.AnimeSeriesID == recreatedSeries.AnimeSeriesID);
             var persistedGroups = context.AnimeGroup.AsNoTracking().ToList();
+            var persistedRecreatedGroup = persistedGroups.SingleOrDefault(group => group.AnimeGroupID == recreatedSeries.AnimeGroupID);
 
             Assert.Equal(recreatedSeries.AnimeGroupID, persistedSeries.AnimeGroupID);
-            Assert.Single(persistedGroups);
+            Assert.NotNull(persistedRecreatedGroup);
+            Assert.Equal(recreatedGroup.GroupName, persistedRecreatedGroup.GroupName);
             Assert.DoesNotContain(persistedGroups, group => group.GroupName == AnimeGroupCreator.TempGroupName);
             Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }

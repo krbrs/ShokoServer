@@ -1,7 +1,7 @@
 # Implementation State: Database Client Migration
 
 **Feature Branch**: `001-database-client-migration`  
-**Last Updated**: 2026-05-15  
+**Last Updated**: 2026-05-17  
 **Status**: EF Core startup activation is implemented; SQLite EF-only bootstrap/runtime is proven for fresh and upgraded fixtures under the internal test guard; production SQLite EF-only opt-in remains deferred
 
 ---
@@ -36,11 +36,17 @@
   - successful hash for a tiny valid embedded MP4
   - `ProcessFileJob` scheduling/execution boundary
   - cached offline `ProcessFileJob.Process()` path without provider search
+- Repository-local EF-safe coverage now also proves:
+  - cached AniDB exact-name lookups
+  - direct AniDB lookup/stateless direct lookup clusters
+  - representative TMDB direct base/text/optional lookup paths
 - Combined EF-only SQLite startup/runtime tests pass in one VSTest process.
 
 ## Remaining Gaps
 
 - Runtime NH dependencies still exist outside the proven cached/offline SQLite path.
+- `BaseCachedRepository.Populate()` parameterless/default overload remains an intentional NH fallback.
+- Broader explicit-session repository/service seams still remain outside the EF-first local lookup clusters.
 - The live provider/network branch after `VideoReleaseService.SearchStarted` is intentionally unproven.
 - MariaDB and SQL Server EF-only bootstrap/runtime implications are not part of the SQLite-only proof.
 - Production opt-in remains deferred; there is still no broad production SQLite EF-only switch.
