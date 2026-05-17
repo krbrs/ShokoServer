@@ -89,17 +89,17 @@ Status:
 ### 3. Deterministic / Local but Broad
 
 - `AnimeGroupCreator`
-  - still uses `SessionFactory.OpenStatelessSession()`
-  - still uses `SessionFactory.OpenSession()`
-  - still depends on `ISessionWrapper` and `CreateSQLQuery(...)`
   - key file: [AnimeGroupCreator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AnimeGroupCreator.cs)
   - already-fixed guarded paths in this seam:
     - `GetOrCreateSingleGroupForSeries(...)`
     - `ClearGroupsAndDependencies(...)`
     - `RecalculateStatsContractsForGroup(...)`
     - `RecreateAllGroups(...)`
-  - remaining NH inside this seam is concentrated in:
-    - public non-guarded `OpenStatelessSession().Wrap()` / `OpenSession().Wrap()` entrypoints
+  - reachable guarded SQLite path status:
+    - relation loading, clear/reset, stats recalculation, and group recreation internals now run through provider-neutral `ISessionWrapper` paths
+    - no remaining direct `CreateSQLQuery(...)` call is reachable from the guarded SQLite group/stat path
+  - remaining NH in and around this seam is now concentrated in:
+    - compatibility/failure fallback repopulation using parameterless `Populate()`
   - current guarded SQLite characterization now explicitly pins:
     - series-phase cache/DB update behavior during `RecalculateStatsContractsForGroup(...)`
     - group cache stats recalculation
@@ -119,10 +119,12 @@ Status:
 
 Status:
 - This is the first broad deterministic local runtime area still carrying explicit NH after the proven cached/offline file path.
-- The next meaningful target inside it is no longer a tiny repository query; it is the broader grouping/stat path around `AnimeGroupCreator` and `AutoAnimeGroupCalculator`.
-- Smallest safe next implementation slice inside this broad seam:
-  - finish the remaining `AnimeGroupCreator` NH orchestration edges after relation loading, starting with the non-guarded wrapper entrypoints and staged transaction boundaries
-  - keep stat persistence and cache lifecycle semantics unchanged while reducing session-opening dependence
+- The guarded SQLite runtime path itself is now mostly clear of direct NH in this grouping/stat area.
+- Grouping orchestration no longer has a direct public NH session-opening seam in the migrated runtime surface.
+- Hidden risk areas before further migration:
+  - `RecreateAllGroups(ISessionWrapper)` remains phaseful and cache-coupled
+  - failure recovery still intentionally depends on parameterless `Populate()` compatibility fallback
+  - cache repopulation timing and temp-group lifecycle are still sensitive and already characterized
 
 ### 4. Action / Job Path
 
@@ -147,10 +149,10 @@ Status:
 1. `AnimeGroupCreator` / `AutoAnimeGroupCalculator` broader grouping-stat seam
    - deterministic/local
    - no live provider/network dependency
-   - still contains explicit NH session/stateless-session orchestration and raw SQL
+   - guarded SQLite runtime path is mostly migrated; remaining meaningful NH is now primarily compatibility fallback infrastructure and deeper non-guarded legacy runtime paths outside the proven test boundary
    - already characterized by the existing grouping/stat test set
    - smallest proposed slice:
-     - `AnimeGroupCreator.RecalculateStatsContractsForGroup(...)` non-guarded session-opening path and phase boundaries, with current partial-persistence semantics preserved
+     - add the next characterization around failure recovery / compatibility fallback before touching parameterless `Populate()` or broader recreate orchestration
 2. intentional compatibility fallback: parameterless `BaseCachedRepository.Populate()`
    - deterministic/local
    - still intentionally NH-backed

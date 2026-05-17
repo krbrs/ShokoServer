@@ -497,9 +497,7 @@ public class AnimeGroupCreator
 
     public async Task RecreateAllGroups()
     {
-        using var session = _databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests
-            ? _databaseFactory.OpenSessionWrapper(useEntityFramework: true)
-            : _databaseFactory.SessionFactory.OpenStatelessSession().Wrap();
+        using var session = _databaseFactory.OpenSessionWrapper(useEntityFramework: true);
         await RecreateAllGroups(session);
     }
 
