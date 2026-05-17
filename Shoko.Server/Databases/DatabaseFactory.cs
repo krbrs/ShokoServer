@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.Extensions.DependencyInjection;
 using NHibernate;
 using Shoko.Server.Data;
 using Shoko.Server.Server;
@@ -9,7 +9,7 @@ using Shoko.Server.Repositories;
 
 namespace Shoko.Server.Databases;
 
-public class DatabaseFactory(SystemService systemService)
+public class DatabaseFactory(SystemService systemService, IServiceScopeFactory serviceScopeFactory)
 {
     private readonly object _sessionLock = new();
     private ISessionFactory _sessionFactory;
@@ -58,10 +58,8 @@ public class DatabaseFactory(SystemService systemService)
             return SessionFactory.OpenSession().Wrap();
         }
 
-        var connectionString = Instance.GetConnectionString();
-        var provider = EFCoreOptionsExtensions.FromDatabaseType(Utils.SettingsProvider.GetSettings().Database.Type);
-        var optionsBuilder = new DbContextOptionsBuilder<ShokoDbContext>();
-        optionsBuilder.ConfigureShokoDbContext(provider, connectionString);
-        return new EfCoreSessionWrapper(new ShokoDbContext(optionsBuilder.Options), true);
+        var scope = serviceScopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+        return new EfCoreSessionWrapper(context, scope);
     }
 }

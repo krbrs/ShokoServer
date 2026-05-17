@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using NHibernate;
 using NHibernate.Transaction;
 using Shoko.Server.Data;
@@ -27,6 +28,7 @@ public class EfCoreSessionWrapper : ISessionWrapper
 {
     private readonly ShokoDbContext _context;
     private readonly bool _ownsContext;
+    private readonly IServiceScope? _ownedScope;
     private IDbConnection? _connection;
 
     /// <summary>
@@ -38,6 +40,13 @@ public class EfCoreSessionWrapper : ISessionWrapper
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _ownsContext = ownsContext;
+    }
+
+    public EfCoreSessionWrapper(ShokoDbContext context, IServiceScope ownedScope)
+    {
+        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _ownedScope = ownedScope ?? throw new ArgumentNullException(nameof(ownedScope));
+        _ownsContext = false;
     }
 
     public ICriteria CreateCriteria<T>() where T : class
@@ -252,6 +261,12 @@ public class EfCoreSessionWrapper : ISessionWrapper
         if (_connection is OwnedDbConnectionWrapper)
         {
             _connection = null;
+        }
+
+        if (_ownedScope != null)
+        {
+            _ownedScope.Dispose();
+            return;
         }
 
         if (_ownsContext)
