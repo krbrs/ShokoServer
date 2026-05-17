@@ -355,8 +355,12 @@ public class SQLiteEfOnlyBootstrapTests
 
             try
             {
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Waiting for startup.");
                 await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Startup completed.");
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), $"Waiting for hash boundary for '{relativePath}'.");
                 var hashReached = await WaitForHashBoundaryOrObservedAsync(absolutePath, () => observedHashJobForFile, TimeSpan.FromSeconds(90));
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), $"Hash boundary wait completed for '{relativePath}' with result={hashReached}.");
 
                 Assert.True(hashReached, "Expected the existing-db RunOnStart path to reach or observe the hash stage.");
                 Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
@@ -480,18 +484,24 @@ public class SQLiteEfOnlyBootstrapTests
 
             try
             {
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Waiting for startup.");
                 await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Startup completed.");
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), $"Waiting for hashed video boundary for '{relativePath}'.");
                 var (videoLocalId, processJobScheduled) = await WaitForHashedVideoOrNhTouchAsync(folderId, relativePath, TimeSpan.FromSeconds(90));
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), $"Hashed video boundary completed for '{relativePath}' with videoLocalId={videoLocalId}, processJobScheduled={processJobScheduled}.");
 
                 Assert.True(videoLocalId > 0);
                 Assert.True(observedHashJobForFile, "Expected the specific HashFileJob to be observed for the valid upgraded-db runtime file.");
                 Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
 
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), $"Waiting for process boundary for '{relativePath}'.");
                 var reachedProcessBoundary = processJobScheduled || await WaitForProcessJobBoundaryOrObservedAsync(
                     videoLocalId,
                     relativePath,
                     () => observedProcessItems.Any(item => IsProcessJobForFileOrVideo(item, relativePath, videoLocalId)),
                     TimeSpan.FromSeconds(30));
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), $"Process boundary wait completed for '{relativePath}' with result={reachedProcessBoundary}.");
                 Assert.True(reachedProcessBoundary, "Expected the valid upgraded-db runtime file to reach ProcessFileJob scheduling or execution.");
                 await AssertProcessFileJobUsesCachedReleaseOfflineAsync(videoLocalId);
             }
@@ -870,6 +880,8 @@ public class SQLiteEfOnlyBootstrapTests
     {
         using var cancellationTokenSource = new CancellationTokenSource(timeout);
         var observedProcessJob = false;
+        var startedAt = DateTime.UtcNow;
+        var lastProgressAt = startedAt;
 
         while (true)
         {
@@ -914,6 +926,11 @@ public class SQLiteEfOnlyBootstrapTests
                 }
             }
 
+            WritePollingProgressIfDue(
+                ref lastProgressAt,
+                startedAt,
+                "WaitForHashedVideoOrNhTouchAsync",
+                $"Still waiting for hashed video for folderId={folderId}, relativePath='{relativePath}', processJobScheduled={observedProcessJob}.");
             cancellationTokenSource.Token.ThrowIfCancellationRequested();
             await Task.Delay(250, cancellationTokenSource.Token);
         }
@@ -952,6 +969,8 @@ public class SQLiteEfOnlyBootstrapTests
     private static async Task<bool> WaitForHashBoundaryOrObservedAsync(string absolutePath, Func<bool> hashObserved, TimeSpan timeout)
     {
         using var cancellationTokenSource = new CancellationTokenSource(timeout);
+        var startedAt = DateTime.UtcNow;
+        var lastProgressAt = startedAt;
         while (true)
         {
             if (SQLite.SessionFactoryCreateCallCount > 0)
@@ -977,6 +996,11 @@ public class SQLiteEfOnlyBootstrapTests
                     return true;
             }
 
+            WritePollingProgressIfDue(
+                ref lastProgressAt,
+                startedAt,
+                "WaitForHashBoundaryOrObservedAsync",
+                $"Still waiting for hash boundary for '{absolutePath}'.");
             cancellationTokenSource.Token.ThrowIfCancellationRequested();
             await Task.Delay(250, cancellationTokenSource.Token);
         }
@@ -985,6 +1009,8 @@ public class SQLiteEfOnlyBootstrapTests
     private static async Task<bool> WaitForProcessJobBoundaryOrObservedAsync(int videoLocalId, string relativePath, Func<bool> processObserved, TimeSpan timeout)
     {
         using var cancellationTokenSource = new CancellationTokenSource(timeout);
+        var startedAt = DateTime.UtcNow;
+        var lastProgressAt = startedAt;
         while (true)
         {
             if (SQLite.SessionFactoryCreateCallCount > 0)
@@ -1015,9 +1041,27 @@ public class SQLiteEfOnlyBootstrapTests
                     return true;
             }
 
+            WritePollingProgressIfDue(
+                ref lastProgressAt,
+                startedAt,
+                "WaitForProcessJobBoundaryOrObservedAsync",
+                $"Still waiting for process boundary for relativePath='{relativePath}', videoLocalId={videoLocalId}.");
             cancellationTokenSource.Token.ThrowIfCancellationRequested();
             await Task.Delay(250, cancellationTokenSource.Token);
         }
+    }
+
+    private static void WriteTestProgress(string testName, string message)
+        => Console.WriteLine($"[{DateTime.UtcNow:O}] [{testName}] {message}");
+
+    private static void WritePollingProgressIfDue(ref DateTime lastProgressAt, DateTime startedAt, string operationName, string message)
+    {
+        var now = DateTime.UtcNow;
+        if (now - lastProgressAt < TimeSpan.FromSeconds(10))
+            return;
+
+        lastProgressAt = now;
+        Console.WriteLine($"[{now:O}] [{operationName}] +{(now - startedAt):mm\\:ss} {message}");
     }
 
     private static async Task AssertProcessFileJobUsesCachedReleaseOfflineAsync(int videoLocalId)
