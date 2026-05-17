@@ -101,12 +101,8 @@ Status:
     - `ClearGroupsAndDependencies(...)` NH fallback branch
     - public non-guarded `OpenStatelessSession().Wrap()` / `OpenSession().Wrap()` entrypoints
 - `AutoAnimeGroupCalculator`
-  - guarded SQLite path is already EF-safe through `CreateWithEf(...)`
-  - remaining NH is in the default/non-guarded creation path:
-    - `Create(...)`
-    - `CreateFromServerSettings()`
-  - still uses `SessionFactory.OpenSession()`
-  - still uses NH SQL projection via `CreateSQLQuery(...)` and `NHibernateUtil.*`
+  - relation-loading and graph materialization are now unified behind the EF/provider-neutral projection path
+  - `Create(...)` and `CreateFromServerSettings()` no longer need NH session opening or NH SQL projection for relation graph construction
   - key file: [AutoAnimeGroupCalculator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AutoAnimeGroupCalculator.cs)
 - `AnimeSeriesRepository`
   - remaining NH in this surface is no longer the maintenance list queries
@@ -120,8 +116,8 @@ Status:
 - This is the first broad deterministic local runtime area still carrying explicit NH after the proven cached/offline file path.
 - The next meaningful target inside it is no longer a tiny repository query; it is the broader grouping/stat path around `AnimeGroupCreator` and `AutoAnimeGroupCalculator`.
 - Smallest safe next implementation slice inside this broad seam:
-  - consolidate the relation-loading path behind `AutoAnimeGroupCalculator.Create(...)` as the single source of grouping graph construction for both guarded and default paths
-  - then re-thread `AnimeGroupCreator` callers through that seam instead of tackling all group recreation/stat persistence at once
+  - finish the remaining `AnimeGroupCreator` NH orchestration edges after relation loading, starting with the explicit NH fallback branches and non-guarded wrapper entrypoints
+  - keep stat persistence and cache lifecycle semantics unchanged while reducing session-opening dependence
 
 ### 4. Action / Job Path
 
@@ -149,7 +145,7 @@ Status:
    - still contains explicit NH session/stateless-session orchestration and raw SQL
    - already characterized by the existing grouping/stat test set
    - smallest proposed slice:
-     - `AutoAnimeGroupCalculator.Create(...)` relation-loading and graph materialization seam
+     - `AnimeGroupCreator` explicit NH orchestration fallback branches now that relation loading is unified
 2. intentional compatibility fallback: parameterless `BaseCachedRepository.Populate()`
    - deterministic/local
    - still intentionally NH-backed

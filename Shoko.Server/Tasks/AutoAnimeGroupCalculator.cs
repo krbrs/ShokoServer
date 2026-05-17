@@ -5,11 +5,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using NHibernate;
 using Shoko.Abstractions.Metadata.Enums;
 using Shoko.Server.Data;
-using Shoko.Server.Databases;
-using Shoko.Server.Repositories;
 using Shoko.Server.Utilities;
 
 namespace Shoko.Server.Tasks;
@@ -102,95 +99,7 @@ public class AutoAnimeGroupCalculator
         AnimeRelationType relationsToFuzzyTitleTest = AnimeRelationType.SecondaryRelations,
         MainAnimeSelectionStrategy mainAnimeSelectionStrategy = MainAnimeSelectionStrategy.MinAirDate)
     {
-        if (SQLite.UseEfOnlyBootstrapForTests)
-        {
-            return CreateWithEf(exclusions, relationsToFuzzyTitleTest, mainAnimeSelectionStrategy);
-        }
-
-        using var session = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>().SessionFactory.OpenSession();
-        var relationshipList = BaseRepository.Lock(session, s => s.CreateSQLQuery(@"
-                SELECT    fromAnime.AnimeID AS fromAnimeId
-                        , toAnime.AnimeID AS toAnimeId
-                        , fromAnime.AnimeType AS fromAnimeType
-                        , toAnime.AnimeType AS toAnimeType
-                        , fromAnime.MainTitle AS fromMainTitle
-                        , toAnime.MainTitle AS toMainTitle
-                        , fromAnime.AirDate AS fromAirDate
-                        , toAnime.AirDate AS toAirDate
-                        , rel.RelationType AS relationType
-                    FROM AniDB_Anime_Relation rel
-                        INNER JOIN AniDB_Anime fromAnime
-                            ON fromAnime.AnimeID = rel.AnimeID
-                        INNER JOIN AniDB_Anime toAnime
-                            ON toAnime.AnimeID = rel.RelatedAnimeID")
-            .AddScalar("fromAnimeId", NHibernateUtil.Int32)
-            .AddScalar("toAnimeId", NHibernateUtil.Int32)
-            .AddScalar("fromAnimeType", NHibernateUtil.Int32)
-            .AddScalar("toAnimeType", NHibernateUtil.Int32)
-            .AddScalar("fromMainTitle", NHibernateUtil.String)
-            .AddScalar("toMainTitle", NHibernateUtil.String)
-            .AddScalar("fromAirDate", NHibernateUtil.DateTime)
-            .AddScalar("toAirDate", NHibernateUtil.DateTime)
-            .AddScalar("relationType", NHibernateUtil.String)
-            .List<object[]>());
-
-        var relationshipMap = relationshipList.Select(r =>
-            {
-                var relation = new AnimeRelation
-                {
-                    FromId = (int)r[0],
-                    ToId = (int)r[1],
-                    FromType = (AnimeType)r[2],
-                    ToType = (AnimeType)r[3],
-                    FromMainTitle = (string)r[4],
-                    ToMainTitle = (string)r[5],
-                    FromAirDate = (DateTime?)r[6],
-                    ToAirDate = (DateTime?)r[7]
-                };
-
-                switch (((string)r[8]).ToLowerInvariant())
-                {
-                    case "full story":
-                        relation.RelationType = AnimeRelationType.FullStory;
-                        break;
-                    case "summary":
-                        relation.RelationType = AnimeRelationType.Summary;
-                        break;
-                    case "parent story":
-                        relation.RelationType = AnimeRelationType.ParentStory;
-                        break;
-                    case "side story":
-                        relation.RelationType = AnimeRelationType.SideStory;
-                        break;
-                    case "prequel":
-                        relation.RelationType = AnimeRelationType.Prequel;
-                        break;
-                    case "sequel":
-                        relation.RelationType = AnimeRelationType.Sequel;
-                        break;
-                    case "alternative setting":
-                        relation.RelationType = AnimeRelationType.AlternativeSetting;
-                        break;
-                    case "alternative version":
-                        relation.RelationType = AnimeRelationType.AlternativeVersion;
-                        break;
-                    case "same setting":
-                        relation.RelationType = AnimeRelationType.SameSetting;
-                        break;
-                    case "character":
-                        relation.RelationType = AnimeRelationType.Character;
-                        break;
-                    default:
-                        relation.RelationType = AnimeRelationType.Other;
-                        break;
-                }
-
-                return relation;
-            })
-            .ToLookup(k => k.FromId);
-
-        return new AutoAnimeGroupCalculator(relationshipMap, exclusions, relationsToFuzzyTitleTest,
-            mainAnimeSelectionStrategy);
+        return CreateWithEf(exclusions, relationsToFuzzyTitleTest, mainAnimeSelectionStrategy);
     }
 
     private static AutoAnimeGroupCalculator CreateWithEf(
@@ -227,25 +136,28 @@ public class AutoAnimeGroupCalculator
                 ToMainTitle = r.ToMainTitle,
                 FromAirDate = r.FromAirDate,
                 ToAirDate = r.ToAirDate,
-                RelationType = r.RelationType?.ToLowerInvariant() switch
-                {
-                    "full story" => AnimeRelationType.FullStory,
-                    "summary" => AnimeRelationType.Summary,
-                    "parent story" => AnimeRelationType.ParentStory,
-                    "side story" => AnimeRelationType.SideStory,
-                    "prequel" => AnimeRelationType.Prequel,
-                    "sequel" => AnimeRelationType.Sequel,
-                    "alternative setting" => AnimeRelationType.AlternativeSetting,
-                    "alternative version" => AnimeRelationType.AlternativeVersion,
-                    "same setting" => AnimeRelationType.SameSetting,
-                    "character" => AnimeRelationType.Character,
-                    _ => AnimeRelationType.Other
-                }
+                RelationType = MapRelationType(r.RelationType)
             })
             .ToLookup(k => k.FromId);
 
         return new AutoAnimeGroupCalculator(relationshipMap, exclusions, relationsToFuzzyTitleTest, mainAnimeSelectionStrategy);
     }
+
+    private static AnimeRelationType MapRelationType(string relationType)
+        => relationType.ToLowerInvariant() switch
+        {
+            "full story" => AnimeRelationType.FullStory,
+            "summary" => AnimeRelationType.Summary,
+            "parent story" => AnimeRelationType.ParentStory,
+            "side story" => AnimeRelationType.SideStory,
+            "prequel" => AnimeRelationType.Prequel,
+            "sequel" => AnimeRelationType.Sequel,
+            "alternative setting" => AnimeRelationType.AlternativeSetting,
+            "alternative version" => AnimeRelationType.AlternativeVersion,
+            "same setting" => AnimeRelationType.SameSetting,
+            "character" => AnimeRelationType.Character,
+            _ => AnimeRelationType.Other
+        };
 
     /// <summary>
     /// Gets the ID of the anime represents the group containing the specified <paramref name="animeId"/>.

@@ -1139,6 +1139,86 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_AutoAnimeGroupCalculator_Create_UsesEfRelationGraphWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var rootAnimeId = 925001 + Random.Shared.Next(1000);
+        var relatedAnimeId = 926001 + Random.Shared.Next(1000);
+        var dissimilarAnimeId = 927001 + Random.Shared.Next(1000);
+
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = rootAnimeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2000, 1, 1),
+            MainTitle = $"galaxy-frontier-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = relatedAnimeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2001, 1, 1),
+            MainTitle = $"galaxy-frontier-ii-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+        RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
+        {
+            AnimeID = dissimilarAnimeId,
+            AnimeType = Shoko.Abstractions.Metadata.Enums.AnimeType.TVSeries,
+            AirDate = new DateTime(2002, 1, 1),
+            MainTitle = $"cooking-academy-{Guid.NewGuid():N}",
+            AllTitles = string.Empty,
+            AllTags = string.Empty,
+            Description = string.Empty
+        });
+        RepoFactory.AniDB_Anime_Relation.Save(new Shoko.Server.Models.AniDB.AniDB_Anime_Relation
+        {
+            AnimeID = relatedAnimeId,
+            RelatedAnimeID = rootAnimeId,
+            RelationType = "prequel"
+        });
+        RepoFactory.AniDB_Anime_Relation.Save(new Shoko.Server.Models.AniDB.AniDB_Anime_Relation
+        {
+            AnimeID = dissimilarAnimeId,
+            RelatedAnimeID = rootAnimeId,
+            RelationType = "same setting"
+        });
+
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        databaseFactory.CloseSessionFactory();
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var calculator = AutoAnimeGroupCalculator.Create(
+                exclusions: AutoGroupExclude.None,
+                relationsToFuzzyTitleTest: AutoAnimeGroupCalculator.AnimeRelationType.SecondaryRelations,
+                mainAnimeSelectionStrategy: MainAnimeSelectionStrategy.MinAirDate);
+
+            var groupedAnimeIds = calculator.GetIdsOfAnimeInSameGroup(relatedAnimeId);
+
+            Assert.Equal(rootAnimeId, calculator.GetGroupAnimeId(rootAnimeId));
+            Assert.Equal(rootAnimeId, calculator.GetGroupAnimeId(relatedAnimeId));
+            Assert.Equal(dissimilarAnimeId, calculator.GetGroupAnimeId(dissimilarAnimeId));
+            Assert.Contains(rootAnimeId, groupedAnimeIds);
+            Assert.Contains(relatedAnimeId, groupedAnimeIds);
+            Assert.DoesNotContain(dissimilarAnimeId, groupedAnimeIds);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_AnimeGroupCreator_RecalculateStatsContractsForGroup_EfOnlyRecalculatesStatsWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
