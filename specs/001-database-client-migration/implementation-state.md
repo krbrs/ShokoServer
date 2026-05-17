@@ -122,6 +122,26 @@ Status:
 - Local/runtime and important, but broader than the grouping/stat seam.
 - Good follow-up target after grouping/stat migration.
 
+#### Ranked Explicit-session Frontier
+
+1. `ActionService.RemoveRecordsWithoutPhysicalFiles(...)`
+   - deterministic/local
+   - no live provider/network dependency
+   - still opens `SessionFactory.OpenSession()` directly before cleanup work
+   - characterization test:
+     - `SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyStillRequiresNhSessionFactory`
+2. `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`
+   - deterministic/local
+   - explicit NH session/transaction orchestration around `VideoLocal` / `VideoLocal_Place` deletion
+   - likely follow-up seam after `ActionService`, because `ActionService` already delegates into `VideoService`
+3. `Scanner.DeleteAllErroredFiles()`
+   - deterministic/local
+   - still opens NH explicitly, but is less central than the `ActionService` / `VideoService` cleanup path
+4. live provider/network-adjacent orchestration
+   - runtime-important, but intentionally lower priority while offline/local seams remain
+5. `DatabaseFixes` and provider DB maintenance code
+   - explicit NH-heavy, but not the next runtime migration target
+
 ### 5. Database Maintenance Path
 
 - `DatabaseFixes`
@@ -217,13 +237,15 @@ Updated next repository target:
 
 ## Recommended Next Migration Target
 
-The next best migration target is the broader explicit-session NH surface outside the now-proven local lookup clusters.
+The next best migration target is `ActionService.RemoveRecordsWithoutPhysicalFiles(...)`.
 
-Most notably:
+Why this seam next:
 
-1. repository/service paths that still call `SessionFactory.OpenSession()` or `OpenStatelessSession()` directly outside EF-first wrappers
-2. action/job seams like `AniDB_GroupStatusRepository.DeleteForAnime(...)` that immediately cross into job processing
-3. TMDB or other repository methods not covered by the representative EF-first lookup characterization if they expose explicit-session behavior rather than plain local lookup
+- deterministic and local
+- no live AniDB/provider dependency
+- small explicit-session entrypoint
+- directly exercises the broader cleanup path that still opens NH before delegating into repository/service logic
+- a successful migration here should clarify the follow-up path for `VideoService.RemoveManagedFolder(...)` and related file-removal seams
 
 ## Current Release Readiness
 

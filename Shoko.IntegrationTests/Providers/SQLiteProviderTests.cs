@@ -2163,6 +2163,30 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public async Task SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyStillRequiresNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var actionService = Utils.ServiceContainer.GetRequiredService<ActionService>();
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => actionService.RemoveRecordsWithoutPhysicalFiles(removeMyList: false));
+            Assert.Contains("SessionFactory", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(SQLite.SessionFactoryCreateCallCount > sessionFactoryCreateCalls);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())
