@@ -11,6 +11,7 @@ namespace Shoko.Server.Repositories.Cached.AniDB;
 public class AniDB_CharacterRepository(DatabaseFactory databaseFactory) : BaseCachedRepository<AniDB_Character, int>(databaseFactory)
 {
     private PocoIndex<int, AniDB_Character, int>? _characterIDs;
+    private PocoIndex<int, AniDB_Character, string>? _names;
 
     protected override int SelectKey(AniDB_Character entity)
         => entity.AniDB_CharacterID;
@@ -18,6 +19,7 @@ public class AniDB_CharacterRepository(DatabaseFactory databaseFactory) : BaseCa
     public override void PopulateIndexes()
     {
         _characterIDs = Cache.CreateIndex(a => a.CharacterID);
+        _names = Cache.CreateIndex(a => a.Name);
     }
 
     public AniDB_Character? GetByCharacterID(int characterID)
@@ -27,17 +29,5 @@ public class AniDB_CharacterRepository(DatabaseFactory databaseFactory) : BaseCa
         => ReadLock(() => RepoFactory.AniDB_Anime_Character.GetByAnimeID(animeID).Select(xref => GetByCharacterID(xref.CharacterID)).WhereNotNull().ToList());
 
     public AniDB_Character? GetByName(string creatorName)
-    {
-        return Lock(() =>
-        {
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            var id = session.Query<AniDB_Character>()
-                .Where(a => a.Name == creatorName)
-                .Take(1)
-                .SingleOrDefault()?.AniDB_CharacterID;
-            if (id.HasValue)
-                return Cache.Get(id.Value);
-            return null;
-        });
-    }
+        => ReadLock(() => _names!.GetOne(creatorName));
 }

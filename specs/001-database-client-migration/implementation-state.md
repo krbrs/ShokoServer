@@ -175,15 +175,13 @@ Status:
   - parameterless/default `GetByID`, `GetAll`, `Save`, and `Delete` paths are already EF-wrapper based
   - hidden NH fallback risk is mostly in repository-specific ad hoc methods, not the direct-repo base
 - `AnimeSeriesRepository.Save(existing series)`
-  - still opens NH directly to fetch the pre-update row:
-    - `DatabaseFactory.SessionFactory.OpenSession()`
-    - `session.Get<AnimeSeries>(...)`
-  - this remains a deterministic runtime NH seam under the SQLite EF-only guard
+  - now uses an EF-safe old-row lookup in the SQLite EF-only path
+  - normal non-guarded provider behavior remains unchanged
   - characterization test:
-    - `SQLite_AnimeSeries_SaveExistingSeries_EfOnlyStillRequiresNhSessionFactory`
+    - `SQLite_AnimeSeries_SaveExistingSeries_EfOnlyUsesEfLookupWithoutNhSessionFactory`
 
 Current conclusion:
-- The highest-value hidden repository seam to migrate next is `AnimeSeriesRepository.Save(existing series)`.
+- `AnimeSeriesRepository.Save(existing series)` is no longer a hidden NH blocker in the SQLite EF-only path.
 - The shared repository infrastructure itself is not uniformly NH-bound anymore; the major remaining risk is ad hoc repository overrides that still open NH sessions internally.
 
 #### Ranked Remaining Repository-specific NH Seams
@@ -191,8 +189,8 @@ Current conclusion:
 1. Cached AniDB name-lookup repositories
    - `AniDB_CreatorRepository.GetByName(...)`
    - `AniDB_CharacterRepository.GetByName(...)`
-   - both still open NH sessions directly inside otherwise cached repositories
-   - deterministic/local and higher-value than broad TMDB lookup surface
+   - now EF-safe in the SQLite EF-only path via exact-name cache indexes
+   - no guarded EF query branch was needed because the NH usage was only bypassing existing cache state
 2. TMDB direct repositories and optional/text sub-repositories
    - many parameterless lookup helpers still use `SessionFactory.OpenSession()`
    - lower priority because the proven startup/runtime path already reaches stable cached TMDB behavior without hitting these as the next blocker
@@ -204,25 +202,19 @@ Updated next repository target:
 - `AniDB_MessageRepository`, `ScheduledUpdateRepository`, and `AniDB_AnimeUpdateRepository` parameterless lookups are EF-safe under the SQLite EF-only guard, including the `AniDB_AnimeUpdateRepository` duplicate-cleanup path.
 - The remaining stateless AniDB direct-repository cluster is EF-safe under the SQLite EF-only guard for repository-local lookup paths and `AniDB_NotifyQueue` delete paths.
 - `AniDB_GroupStatusRepository.DeleteForAnime(...)` crosses immediately into the action/job seam because it calls `RefreshAnimeStatsJob.Process()` inline, so it is not treated as a pure direct-repository seam.
-- The next repository-specific NH seam is the cached AniDB name-lookup pair:
-  - `AniDB_CreatorRepository.GetByName(...)`
-  - `AniDB_CharacterRepository.GetByName(...)`
+- `AniDB_CreatorRepository.GetByName(...)` and `AniDB_CharacterRepository.GetByName(...)` are now EF-safe in the SQLite EF-only path through cache indexes instead of NH session lookups.
+- The next repository-specific NH seam is the TMDB direct-repository lookup surface.
 
 ## Recommended Next Migration Target
 
-The next best migration target after the proven cached/offline `ProcessFileJob` path is:
-
-1. `AnimeGroupCreator`
-2. `AutoAnimeGroupCalculator`
-3. the specific `AnimeSeriesRepository` NH query/save helpers they depend on
+The next best repository migration target is the TMDB direct-repository lookup surface.
 
 Why this seam next:
 
-- It is deterministic and local.
+- It is now the clearest remaining repository-specific NH lookup cluster after the AniDB cached/direct local seams.
+- It stays deterministic and local.
 - It does not require live AniDB/network.
-- It is still one of the heaviest remaining NH runtime areas.
-- It is smaller and safer than broad `ActionService` / `VideoService` / `DatabaseFixes` migration.
-- It directly reduces NH usage in grouping/stat recalculation, which is a meaningful runtime path after startup.
+- It can be characterized and reduced incrementally without broad runtime behavior changes.
 
 ## Current Release Readiness
 

@@ -2012,6 +2012,58 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_CachedAniDbNameLookups_EfOnlyUseCacheIndexesWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var creatorId = 988001 + Random.Shared.Next(1000);
+        var characterId = 989001 + Random.Shared.Next(1000);
+        var creatorName = $"creator-{Guid.NewGuid():N}";
+        var characterName = $"character-{Guid.NewGuid():N}";
+
+        RepoFactory.AniDB_Creator.Save(new Shoko.Server.Models.AniDB.AniDB_Creator
+        {
+            CreatorID = creatorId,
+            Name = creatorName,
+            Type = Shoko.Server.Providers.AniDB.CreatorType.Person,
+            LastUpdatedAt = DateTime.UtcNow
+        });
+
+        RepoFactory.AniDB_Character.Save(new Shoko.Server.Models.AniDB.AniDB_Character
+        {
+            CharacterID = characterId,
+            Name = characterName,
+            OriginalName = characterName,
+            Description = "test character",
+            ImagePath = string.Empty,
+            Gender = Shoko.Server.Providers.TMDB.PersonGender.Unknown,
+            Type = Shoko.Server.Server.CharacterType.Character,
+            LastUpdated = DateTime.UtcNow
+        });
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var creator = RepoFactory.AniDB_Creator.GetByName(creatorName);
+            var character = RepoFactory.AniDB_Character.GetByName(characterName);
+
+            Assert.NotNull(creator);
+            Assert.Equal(creatorId, creator.CreatorID);
+            Assert.NotNull(character);
+            Assert.Equal(characterId, character.CharacterID);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())

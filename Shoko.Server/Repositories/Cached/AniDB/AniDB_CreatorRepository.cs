@@ -9,6 +9,7 @@ namespace Shoko.Server.Repositories.Cached.AniDB;
 public class AniDB_CreatorRepository(DatabaseFactory databaseFactory) : BaseCachedRepository<AniDB_Creator, int>(databaseFactory)
 {
     private PocoIndex<int, AniDB_Creator, int>? _creatorIDs;
+    private PocoIndex<int, AniDB_Creator, string>? _names;
 
     protected override int SelectKey(AniDB_Creator entity)
         => entity.AniDB_CreatorID;
@@ -16,6 +17,7 @@ public class AniDB_CreatorRepository(DatabaseFactory databaseFactory) : BaseCach
     public override void PopulateIndexes()
     {
         _creatorIDs = Cache.CreateIndex(a => a.CreatorID);
+        _names = Cache.CreateIndex(a => a.Name);
     }
 
     public AniDB_Creator? GetByCreatorID(int creatorID)
@@ -24,17 +26,5 @@ public class AniDB_CreatorRepository(DatabaseFactory databaseFactory) : BaseCach
     }
 
     public AniDB_Creator? GetByName(string creatorName)
-    {
-        return Lock(() =>
-        {
-            using var session = _databaseFactory.SessionFactory.OpenSession();
-            var id = session.Query<AniDB_Creator>()
-                .Where(a => a.Name == creatorName)
-                .Take(1)
-                .SingleOrDefault()?.AniDB_CreatorID;
-            if (id.HasValue)
-                return Cache.Get(id.Value);
-            return null;
-        });
-    }
+        => ReadLock(() => _names!.GetOne(creatorName));
 }
