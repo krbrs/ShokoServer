@@ -10,6 +10,7 @@ using Shoko.Abstractions.Video.Services;
 using Shoko.Server.API.v2.Models.common;
 using Shoko.Server.Data;
 using Shoko.Server.Databases;
+using Shoko.Server.Models.Legacy;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
 using Shoko.Server.Repositories.Cached;
@@ -17,6 +18,7 @@ using Shoko.Server.Repositories.Cached.AniDB;
 using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.AniDB;
 using Shoko.Server.Scheduling.Jobs.Shoko;
+using Shoko.Server.Server;
 using Shoko.Server.Services;
 using Shoko.Server.Settings;
 using Shoko.Server.Tasks;
@@ -2314,6 +2316,115 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
                 Assert.Null(RepoFactory.ShokoManagedFolder.GetByID(folder.ID));
                 Assert.Null(RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID));
                 Assert.Null(RepoFactory.VideoLocal.GetByID(video.VideoLocalID));
+                Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+            }
+            finally
+            {
+                SQLite.ThrowOnSessionFactoryCreateForTests = false;
+                SQLite.UseEfOnlyBootstrapForTests = false;
+                databaseFactory.CloseSessionFactory();
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SQLite_Scanner_DeleteAllErroredFiles_EfOnlyUsesWrapperWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"shoko-scanner-delete-errored-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var relativePath = "scanner-errored-video.mkv";
+            var absolutePath = Path.Combine(tempRoot, relativePath);
+            await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
+
+            var folder = new ShokoManagedFolder
+            {
+                Name = $"SQLite Scanner Folder {Guid.NewGuid():N}",
+                Path = tempRoot,
+                IsWatched = false
+            };
+            RepoFactory.ShokoManagedFolder.Save(folder);
+
+            var video = new VideoLocal
+            {
+                DateTimeCreated = DateTime.UtcNow,
+                DateTimeUpdated = DateTime.UtcNow,
+                FileName = Path.GetFileName(relativePath),
+                FileSize = new FileInfo(absolutePath).Length,
+                Hash = Guid.NewGuid().ToString("N"),
+                HashSource = 0,
+                IsIgnored = false,
+                IsVariation = false,
+                MediaVersion = 0,
+                MyListID = 0
+            };
+            RepoFactory.VideoLocal.Save(video, updateEpisodes: false);
+
+            var place = new VideoLocal_Place
+            {
+                ManagedFolderID = folder.ID,
+                RelativePath = relativePath,
+                VideoID = video.VideoLocalID,
+            };
+            RepoFactory.VideoLocalPlace.Save(place);
+            var persistedPlace = RepoFactory.VideoLocalPlace.GetByRelativePathAndManagedFolderID(relativePath, folder.ID);
+            Assert.NotNull(persistedPlace);
+
+            var scan = new Scan
+            {
+                CreationTIme = DateTime.UtcNow,
+                ImportFolders = folder.ID.ToString(),
+                Status = ScanStatus.Finished
+            };
+            RepoFactory.Scan.Save(scan);
+            Assert.True(scan.ScanID > 0);
+
+            var erroredFile = new ScanFile
+            {
+                ScanID = scan.ScanID,
+                ImportFolderID = folder.ID,
+                VideoLocal_Place_ID = persistedPlace!.ID,
+                FullName = absolutePath,
+                FileSize = video.FileSize,
+                Status = ScanFileStatus.ErrorInvalidHash,
+                CheckDate = DateTime.UtcNow,
+                Hash = video.Hash,
+                HashResult = "different-hash"
+            };
+            RepoFactory.ScanFile.Save(erroredFile);
+            var persistedErroredFile = RepoFactory.ScanFile.GetWithError(scan.ScanID).Single(a => a.FullName == absolutePath);
+            Assert.Equal(persistedPlace.ID, persistedErroredFile.VideoLocal_Place_ID);
+            Assert.NotNull(RepoFactory.VideoLocalPlace.GetByID(persistedErroredFile.VideoLocal_Place_ID));
+
+            var scanner = new Scanner
+            {
+                ActiveScan = scan
+            };
+            Assert.Single(scanner.ActiveErrorFiles);
+
+            databaseFactory.CloseSessionFactory();
+            var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+            SQLite.UseEfOnlyBootstrapForTests = true;
+            SQLite.ThrowOnSessionFactoryCreateForTests = true;
+            try
+            {
+                scanner.DeleteAllErroredFiles();
+
+                Assert.Empty(scanner.ActiveErrorFiles);
+                Assert.False(File.Exists(absolutePath));
+                Assert.Null(RepoFactory.ScanFile.GetByID(persistedErroredFile.ScanFileID));
+                Assert.Null(RepoFactory.VideoLocalPlace.GetByID(persistedPlace.ID));
+                Assert.Null(RepoFactory.VideoLocal.GetByID(video.VideoLocalID));
+                Assert.NotNull(RepoFactory.ShokoManagedFolder.GetByID(folder.ID));
                 Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
             }
             finally

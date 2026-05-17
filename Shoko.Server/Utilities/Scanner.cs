@@ -15,6 +15,7 @@ using Shoko.Server.Hashing;
 using Shoko.Server.Models.Legacy;
 using Shoko.Server.Models.Shoko;
 using Shoko.Server.Repositories;
+using Shoko.Server.Repositories.NHibernate;
 using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.Actions;
 using Shoko.Server.Server;
@@ -169,7 +170,9 @@ public class Scanner
         var vlpService = (VideoService)Utils.ServiceContainer.GetRequiredService<IVideoService>();
         var scheduler = Utils.ServiceContainer.GetRequiredService<ISchedulerFactory>().GetScheduler().Result;
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
-        using (var session = databaseFactory.SessionFactory.OpenSession())
+        using (var session = databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests
+                   ? databaseFactory.OpenSessionWrapper(useEntityFramework: true)
+                   : databaseFactory.SessionFactory.OpenSession().Wrap())
         {
             files.ForEach(file =>
             {

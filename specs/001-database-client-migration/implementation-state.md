@@ -138,7 +138,9 @@ Status:
      - `SQLite_VideoService_RemoveManagedFolder_EfOnlyUsesWrapperWithoutNhSessionFactory`
 3. `Scanner.DeleteAllErroredFiles()`
    - deterministic/local
-   - now the next deterministic local explicit-session seam after the `ActionService` / `VideoService` cleanup path
+   - now EF-safe in the SQLite EF-only path via wrapper-based session opening and the existing `VideoService.RemoveAndDeleteFileWithOpenTransaction(ISessionWrapper, ...)` overload
+   - characterization test:
+     - `SQLite_Scanner_DeleteAllErroredFiles_EfOnlyUsesWrapperWithoutNhSessionFactory`
 4. live provider/network-adjacent orchestration
    - runtime-important, but intentionally lower priority while offline/local seams remain
 5. `DatabaseFixes` and provider DB maintenance code
@@ -239,15 +241,15 @@ Updated next repository target:
 
 ## Recommended Next Migration Target
 
-The next best migration target is `Scanner.DeleteAllErroredFiles()`.
+The next best migration target is the next broader explicit-session repository/service seam outside these local cleanup paths.
 
 Why this seam next:
 
 - deterministic and local
 - no live AniDB/provider dependency
-- still opens NH explicitly in a contained cleanup path
-- sits immediately after the now-migrated `ActionService` / `VideoService` explicit-session cleanup seams
-- should reduce another local maintenance/runtime seam without widening into provider/network work
+- the smallest local cleanup seams (`ActionService`, `VideoService`, `Scanner.DeleteAllErroredFiles`) are now covered in the guarded SQLite path
+- the remaining NH risk frontier is shifting back toward broader explicit-session repository/service orchestration rather than isolated cleanup helpers
+- the next target should be chosen from the remaining explicit-session inventory based on deterministic local coverage potential
 
 ## Current Release Readiness
 

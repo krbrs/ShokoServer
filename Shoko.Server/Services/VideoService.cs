@@ -574,7 +574,7 @@ public class VideoService : IVideoService
         await RemoveRecord(place, updateMyList);
     }
 
-    public async Task RemoveAndDeleteFileWithOpenTransaction(ISession session, VideoLocal_Place place, HashSet<AnimeSeries> seriesToUpdate, bool deleteFolders = true, bool updateMyList = true)
+    public async Task RemoveAndDeleteFileWithOpenTransaction(ISessionWrapper session, VideoLocal_Place place, HashSet<AnimeSeries> seriesToUpdate, bool deleteFolders = true, bool updateMyList = true)
     {
         try
         {
@@ -614,6 +614,9 @@ public class VideoService : IVideoService
                 ex);
         }
     }
+
+    public async Task RemoveAndDeleteFileWithOpenTransaction(ISession session, VideoLocal_Place place, HashSet<AnimeSeries> seriesToUpdate, bool deleteFolders = true, bool updateMyList = true)
+        => await RemoveAndDeleteFileWithOpenTransaction(session.Wrap(), place, seriesToUpdate, deleteFolders, updateMyList);
 
     private void DeleteExternalSubtitles(string originalFileName)
     {
