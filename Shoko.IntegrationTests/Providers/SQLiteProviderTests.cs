@@ -2163,7 +2163,7 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
-    public async Task SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyStillRequiresNhSessionFactory()
+    public async Task SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyUsesWrapperWithoutNhSessionFactory()
     {
         var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
         var actionService = Utils.ServiceContainer.GetRequiredService<ActionService>();
@@ -2174,9 +2174,8 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
         SQLite.ThrowOnSessionFactoryCreateForTests = true;
         try
         {
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => actionService.RemoveRecordsWithoutPhysicalFiles(removeMyList: false));
-            Assert.Contains("SessionFactory", ex.Message, StringComparison.OrdinalIgnoreCase);
-            Assert.True(SQLite.SessionFactoryCreateCallCount > sessionFactoryCreateCalls);
+            await actionService.RemoveRecordsWithoutPhysicalFiles(removeMyList: false);
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
         }
         finally
         {

@@ -22,6 +22,7 @@ using Shoko.Server.Providers.AniDB.Interfaces;
 using Shoko.Server.Providers.AniDB.UDP.Info;
 using Shoko.Server.Providers.TMDB;
 using Shoko.Server.Repositories;
+using Shoko.Server.Repositories.NHibernate;
 using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.Actions;
 using Shoko.Server.Scheduling.Jobs.AniDB;
@@ -440,7 +441,9 @@ public class ActionService
         var scheduler = await _schedulerFactory.GetScheduler();
         _logger.LogInformation("Remove Missing Files: Start");
         var seriesToUpdate = new HashSet<AnimeSeries>();
-        using var session = _databaseFactory.SessionFactory.OpenSession();
+        using var session = _databaseFactory.Instance is SQLite && SQLite.UseEfOnlyBootstrapForTests
+            ? _databaseFactory.OpenSessionWrapper(useEntityFramework: true)
+            : _databaseFactory.SessionFactory.OpenSession().Wrap();
 
         // remove missing files in valid managed folders
         var filesAll = RepoFactory.VideoLocalPlace.GetAll()

@@ -24,6 +24,7 @@ using Shoko.Server.Repositories;
 using Shoko.Server.Repositories.Cached;
 using Shoko.Server.Repositories.Cached.AniDB;
 using Shoko.Server.Repositories.Direct;
+using Shoko.Server.Repositories.NHibernate;
 using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.Jobs.Actions;
 using Shoko.Server.Scheduling.Jobs.AniDB;
@@ -711,7 +712,7 @@ public class VideoService : IVideoService
         await Task.WhenAll(seriesToUpdate.Select(a => scheduler.StartJob<RefreshAnimeStatsJob>(b => b.AnimeID = a.AniDB_ID)));
     }
 
-    public async Task RemoveRecordWithOpenTransaction(ISession session, VideoLocal_Place place, ICollection<AnimeSeries> seriesToUpdate,
+    public async Task RemoveRecordWithOpenTransaction(ISessionWrapper session, VideoLocal_Place place, ICollection<AnimeSeries> seriesToUpdate,
         bool updateMyListStatus = true)
     {
         _logger.LogInformation("Removing VideoLocal_Place record for: {Place}", place.Path ?? place.ID.ToString());
@@ -764,6 +765,10 @@ public class VideoService : IVideoService
             });
         }
     }
+
+    public async Task RemoveRecordWithOpenTransaction(ISession session, VideoLocal_Place place, ICollection<AnimeSeries> seriesToUpdate,
+        bool updateMyListStatus = true)
+        => await RemoveRecordWithOpenTransaction(session.Wrap(), place, seriesToUpdate, updateMyListStatus);
 
     public async Task ScheduleRemovalFromMyList(VideoLocal video)
     {

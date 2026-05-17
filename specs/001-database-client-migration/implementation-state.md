@@ -127,13 +127,13 @@ Status:
 1. `ActionService.RemoveRecordsWithoutPhysicalFiles(...)`
    - deterministic/local
    - no live provider/network dependency
-   - still opens `SessionFactory.OpenSession()` directly before cleanup work
+   - now EF-safe in the SQLite EF-only path via `OpenSessionWrapper(useEntityFramework: true)`
    - characterization test:
-     - `SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyStillRequiresNhSessionFactory`
+     - `SQLite_ActionService_RemoveRecordsWithoutPhysicalFiles_EfOnlyUsesWrapperWithoutNhSessionFactory`
 2. `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`
    - deterministic/local
    - explicit NH session/transaction orchestration around `VideoLocal` / `VideoLocal_Place` deletion
-   - likely follow-up seam after `ActionService`, because `ActionService` already delegates into `VideoService`
+   - next follow-up seam, because `ActionService` now delegates through an EF-safe wrapper path but `VideoService` still exposes raw NH entrypoints outside that guarded call chain
 3. `Scanner.DeleteAllErroredFiles()`
    - deterministic/local
    - still opens NH explicitly, but is less central than the `ActionService` / `VideoService` cleanup path
@@ -237,15 +237,17 @@ Updated next repository target:
 
 ## Recommended Next Migration Target
 
-The next best migration target is `ActionService.RemoveRecordsWithoutPhysicalFiles(...)`.
+The next best migration target is `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`.
 
 Why this seam next:
 
 - deterministic and local
 - no live AniDB/provider dependency
-- small explicit-session entrypoint
-- directly exercises the broader cleanup path that still opens NH before delegating into repository/service logic
-- a successful migration here should clarify the follow-up path for `VideoService.RemoveManagedFolder(...)` and related file-removal seams
+- deterministic and local
+- no live AniDB/provider dependency
+- still exposes explicit NH session/transaction entrypoints directly
+- sits immediately after the now-migrated `ActionService.RemoveRecordsWithoutPhysicalFiles(...)` seam
+- should reduce the remaining file-removal explicit-session surface without widening into network/provider work
 
 ## Current Release Readiness
 
