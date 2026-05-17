@@ -1922,6 +1922,96 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
     }
 
     [Fact]
+    public void SQLite_StatelessAniDbDirectCluster_EfOnlyUsesDefaultWrapperWithoutNhSessionFactory()
+    {
+        var databaseFactory = Utils.ServiceContainer.GetRequiredService<DatabaseFactory>();
+        var jobFactory = Utils.ServiceContainer.GetRequiredService<JobFactory>();
+        var animeId = 983001 + Random.Shared.Next(1000);
+        var groupAnimeId = animeId + 1;
+        var groupId = 984001 + Random.Shared.Next(1000);
+        var notifyId = 985001 + Random.Shared.Next(1000);
+        var similarAnimeId = 986001 + Random.Shared.Next(1000);
+        var creatorId = 987001 + Random.Shared.Next(1000);
+
+        RepoFactory.AniDB_GroupStatus.Save(new Shoko.Server.Models.AniDB.AniDB_GroupStatus
+        {
+            AnimeID = groupAnimeId,
+            GroupID = groupId,
+            GroupName = $"group-status-{Guid.NewGuid():N}",
+            CompletionState = 1,
+            LastEpisodeNumber = 12,
+            Rating = 8.5m,
+            Votes = 4,
+            EpisodeRange = "1-12"
+        });
+
+        RepoFactory.AniDB_NotifyQueue.Save(new Shoko.Server.Models.AniDB.AniDB_NotifyQueue
+        {
+            Type = Shoko.Server.Server.AniDBNotifyType.Message,
+            ID = notifyId,
+            AddedAt = DateTime.UtcNow
+        });
+
+        RepoFactory.AniDB_Anime_Similar.Save(new Shoko.Server.Models.AniDB.AniDB_Anime_Similar
+        {
+            AnimeID = animeId,
+            SimilarAnimeID = similarAnimeId,
+            Approval = 9,
+            Total = 10
+        });
+
+        RepoFactory.AniDB_Anime_Staff.Save(new Shoko.Server.Models.AniDB.AniDB_Anime_Staff
+        {
+            AnimeID = animeId,
+            CreatorID = creatorId,
+            Role = "Director",
+            RoleType = Shoko.Server.Server.CreatorRoleType.Director,
+            Ordering = 1
+        });
+
+        databaseFactory.CloseSessionFactory();
+        var sessionFactoryCreateCalls = SQLite.SessionFactoryCreateCallCount;
+        SQLite.UseEfOnlyBootstrapForTests = true;
+        SQLite.ThrowOnSessionFactoryCreateForTests = true;
+        try
+        {
+            var groupStatuses = RepoFactory.AniDB_GroupStatus.GetByAnimeID(groupAnimeId);
+            var notifyQueue = RepoFactory.AniDB_NotifyQueue.GetByType(Shoko.Server.Server.AniDBNotifyType.Message);
+            var notifyQueueItem = RepoFactory.AniDB_NotifyQueue.GetByTypeID(Shoko.Server.Server.AniDBNotifyType.Message, notifyId);
+            var similarEntries = RepoFactory.AniDB_Anime_Similar.GetByAnimeID(animeId);
+            var similarEntry = RepoFactory.AniDB_Anime_Similar.GetByAnimeIDAndSimilarID(animeId, similarAnimeId);
+            var staffByAnime = RepoFactory.AniDB_Anime_Staff.GetByAnimeID(animeId);
+            var staffByCreator = RepoFactory.AniDB_Anime_Staff.GetByCreatorID(creatorId);
+
+            Assert.Single(groupStatuses);
+            Assert.Equal(groupId, groupStatuses[0].GroupID);
+
+            Assert.Contains(notifyQueue, entry => entry.ID == notifyId);
+            Assert.NotNull(notifyQueueItem);
+            Assert.Equal(notifyId, notifyQueueItem.ID);
+
+            Assert.Single(similarEntries);
+            Assert.NotNull(similarEntry);
+            Assert.Equal(similarAnimeId, similarEntry.SimilarAnimeID);
+
+            Assert.Single(staffByAnime);
+            Assert.Single(staffByCreator);
+            Assert.Equal(creatorId, staffByAnime[0].CreatorID);
+
+            RepoFactory.AniDB_NotifyQueue.DeleteForTypeID(Shoko.Server.Server.AniDBNotifyType.Message, notifyId);
+            Assert.Null(RepoFactory.AniDB_NotifyQueue.GetByTypeID(Shoko.Server.Server.AniDBNotifyType.Message, notifyId));
+
+            Assert.Equal(sessionFactoryCreateCalls, SQLite.SessionFactoryCreateCallCount);
+        }
+        finally
+        {
+            SQLite.ThrowOnSessionFactoryCreateForTests = false;
+            SQLite.UseEfOnlyBootstrapForTests = false;
+            databaseFactory.CloseSessionFactory();
+        }
+    }
+
+    [Fact]
     public async Task SQLite_MediaInfoJob_MissingVideoLocal_SkipsWithoutThrowing()
     {
         var job = new MediaInfoJob(Utils.ServiceContainer.GetRequiredService<IVideoService>())

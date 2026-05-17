@@ -188,9 +188,11 @@ Current conclusion:
 
 #### Ranked Remaining Repository-specific NH Seams
 
-1. `AniDB_GroupStatusRepository`, `AniDB_NotifyQueueRepository`, `AniDB_Anime_SimilarRepository`, `AniDB_Anime_StaffRepository`
-   - still use `OpenStatelessSession()` or NH delete/query paths
-   - local, but narrower operational impact than the episode duplicate/multi-release queries
+1. Cached AniDB name-lookup repositories
+   - `AniDB_CreatorRepository.GetByName(...)`
+   - `AniDB_CharacterRepository.GetByName(...)`
+   - both still open NH sessions directly inside otherwise cached repositories
+   - deterministic/local and higher-value than broad TMDB lookup surface
 2. TMDB direct repositories and optional/text sub-repositories
    - many parameterless lookup helpers still use `SessionFactory.OpenSession()`
    - lower priority because the proven startup/runtime path already reaches stable cached TMDB behavior without hitting these as the next blocker
@@ -200,11 +202,11 @@ Updated next repository target:
 - `AnimeEpisodeRepository.GetWithMultipleReleases(...)` and `GetWithDuplicateFiles(...)` are now EF-safe in the SQLite EF-only path.
 - `ScanFileRepository` parameterless query helpers are already EF-safe under the SQLite EF-only guard.
 - `AniDB_MessageRepository`, `ScheduledUpdateRepository`, and `AniDB_AnimeUpdateRepository` parameterless lookups are EF-safe under the SQLite EF-only guard, including the `AniDB_AnimeUpdateRepository` duplicate-cleanup path.
-- The next direct local lookup seam is the remaining stateless AniDB direct repository cluster:
-  - `AniDB_GroupStatusRepository`
-  - `AniDB_NotifyQueueRepository`
-  - `AniDB_Anime_SimilarRepository`
-  - `AniDB_Anime_StaffRepository`
+- The remaining stateless AniDB direct-repository cluster is EF-safe under the SQLite EF-only guard for repository-local lookup paths and `AniDB_NotifyQueue` delete paths.
+- `AniDB_GroupStatusRepository.DeleteForAnime(...)` crosses immediately into the action/job seam because it calls `RefreshAnimeStatsJob.Process()` inline, so it is not treated as a pure direct-repository seam.
+- The next repository-specific NH seam is the cached AniDB name-lookup pair:
+  - `AniDB_CreatorRepository.GetByName(...)`
+  - `AniDB_CharacterRepository.GetByName(...)`
 
 ## Recommended Next Migration Target
 
