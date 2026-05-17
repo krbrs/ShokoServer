@@ -100,6 +100,11 @@ Status:
     - `RecreateAllGroups(...)`
   - remaining NH inside this seam is concentrated in:
     - public non-guarded `OpenStatelessSession().Wrap()` / `OpenSession().Wrap()` entrypoints
+  - current guarded SQLite characterization now explicitly pins:
+    - series-phase cache/DB update behavior during `RecalculateStatsContractsForGroup(...)`
+    - group cache stats recalculation
+    - persisted `AnimeGroup` row remaining unchanged where current behavior leaves it unchanged
+    - persisted `AnimeGroup_User` retaining the current watched-counter/default behavior
 - `AutoAnimeGroupCalculator`
   - relation-loading and graph materialization are now unified behind the EF/provider-neutral projection path
   - `Create(...)` and `CreateFromServerSettings()` no longer need NH session opening or NH SQL projection for relation graph construction

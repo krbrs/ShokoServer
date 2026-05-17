@@ -1245,9 +1245,9 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             AnimeGroupID = group.AnimeGroupID,
             DateTimeCreated = now,
             DateTimeUpdated = now,
-            MissingEpisodeCount = 3,
-            MissingEpisodeCountGroups = 2,
-            LatestEpisodeAirDate = new DateTime(2020, 5, 4)
+            MissingEpisodeCount = 0,
+            MissingEpisodeCountGroups = 0,
+            LatestEpisodeAirDate = null
         };
         RepoFactory.AniDB_Anime.Save(new Shoko.Server.Models.AniDB.AniDB_Anime
         {
@@ -1260,6 +1260,14 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             Description = string.Empty
         });
         RepoFactory.AnimeSeries.Save(series, false, true);
+        var expectedMissingEpisodeCount = 3;
+        var expectedMissingEpisodeCountGroups = 2;
+        var expectedLatestEpisodeAirDate = new DateTime(2020, 5, 4);
+        var cachedSeries = RepoFactory.AnimeSeries.GetByID(series.AnimeSeriesID);
+        Assert.NotNull(cachedSeries);
+        cachedSeries.MissingEpisodeCount = expectedMissingEpisodeCount;
+        cachedSeries.MissingEpisodeCountGroups = expectedMissingEpisodeCountGroups;
+        cachedSeries.LatestEpisodeAirDate = expectedLatestEpisodeAirDate;
         RepoFactory.AnimeSeries_User.Save(new AnimeSeries_User
         {
             JMMUserID = user.JMMUserID,
@@ -1282,13 +1290,19 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
             var creator = CreateAnimeGroupCreator();
             await creator.RecalculateStatsContractsForGroup(group);
 
+            var refreshedSeries = RepoFactory.AnimeSeries.GetByID(series.AnimeSeriesID);
             var refreshedGroup = RepoFactory.AnimeGroup.GetByID(group.AnimeGroupID);
             var refreshedGroupUser = RepoFactory.AnimeGroup_User.GetByUserAndGroupID(user.JMMUserID, group.AnimeGroupID);
 
+            Assert.NotNull(refreshedSeries);
+            Assert.Equal(expectedMissingEpisodeCount, refreshedSeries.MissingEpisodeCount);
+            Assert.Equal(expectedMissingEpisodeCountGroups, refreshedSeries.MissingEpisodeCountGroups);
+            Assert.Equal(expectedLatestEpisodeAirDate, refreshedSeries.LatestEpisodeAirDate);
+
             Assert.NotNull(refreshedGroup);
-            Assert.Equal(3, refreshedGroup.MissingEpisodeCount);
-            Assert.Equal(2, refreshedGroup.MissingEpisodeCountGroups);
-            Assert.Equal(new DateTime(2020, 5, 4), refreshedGroup.LatestEpisodeAirDate);
+            Assert.Equal(expectedMissingEpisodeCount, refreshedGroup.MissingEpisodeCount);
+            Assert.Equal(expectedMissingEpisodeCountGroups, refreshedGroup.MissingEpisodeCountGroups);
+            Assert.Equal(expectedLatestEpisodeAirDate, refreshedGroup.LatestEpisodeAirDate);
 
             Assert.NotNull(refreshedGroupUser);
             Assert.Equal(0, refreshedGroupUser.WatchedCount);
@@ -1300,9 +1314,13 @@ public class SQLiteProviderTests : IClassFixture<DatabaseMigrationFixture>
 
             using var scope = Utils.ServiceContainer.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<ShokoDbContext>();
+            var persistedSeries = context.AnimeSeries.AsNoTracking().Single(a => a.AnimeSeriesID == series.AnimeSeriesID);
             var persistedGroup = context.AnimeGroup.AsNoTracking().Single(a => a.AnimeGroupID == group.AnimeGroupID);
             var persistedGroupUser = context.AnimeGroup_User.AsNoTracking().Single(a => a.AnimeGroupID == group.AnimeGroupID && a.JMMUserID == user.JMMUserID);
 
+            Assert.Equal(expectedMissingEpisodeCount, persistedSeries.MissingEpisodeCount);
+            Assert.Equal(expectedMissingEpisodeCountGroups, persistedSeries.MissingEpisodeCountGroups);
+            Assert.Equal(expectedLatestEpisodeAirDate, persistedSeries.LatestEpisodeAirDate);
             Assert.Equal(0, persistedGroup.MissingEpisodeCount);
             Assert.Equal(0, persistedGroup.MissingEpisodeCountGroups);
             Assert.Null(persistedGroup.LatestEpisodeAirDate);
