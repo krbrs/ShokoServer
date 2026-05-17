@@ -98,55 +98,50 @@ Status:
   - still uses NH SQL projection via `CreateSQLQuery(...)` and `NHibernateUtil.*`
   - key file: [AutoAnimeGroupCalculator.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Tasks/AutoAnimeGroupCalculator.cs)
 - `AnimeSeriesRepository`
-  - still contains NH-backed query and save/update paths used by grouping/stat flows
-  - `OpenSession()` and `CreateSQLQuery(...)` remain in several series maintenance queries
-  - next narrow boundary in this surface:
+  - remaining NH in this surface is no longer the maintenance list queries
+  - `Save(existing series)` and the maintenance query trio are now EF-safe in the guarded SQLite path:
     - `GetWithMissingEpisodes(bool collecting)`
-    - neighboring raw-SQL maintenance list methods
-  - characterization test:
-    - `SQLite_AnimeSeriesRepository_GetWithMissingEpisodes_EfOnlyStillRequiresNhSessionFactory`
+    - `GetWithMultipleReleases(bool ignoreVariations)`
+    - `GetWithDuplicateFiles()`
+  - remaining risk is in the broader grouping/stat save/update flow that still relies on NH outside those guarded query branches
 
 Status:
 - This is the first broad deterministic local runtime area still carrying explicit NH after the proven cached/offline file path.
-- The smallest next target inside it is the remaining `AnimeSeriesRepository` raw-SQL maintenance query surface rather than the full grouping engine at once.
+- The next meaningful target inside it is no longer a tiny repository query; it is the broader grouping/stat path around `AnimeGroupCreator` and `AutoAnimeGroupCalculator`.
 
 ### 4. Action / Job Path
 
 - `ActionService`
-  - still contains explicit `SessionFactory.OpenSession()` usage
+  - local cleanup seam is EF-safe in the guarded SQLite path
   - key file: [ActionService.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Services/ActionService.cs)
 - `VideoService`
-  - still exposes explicit `ISession` transaction paths
-  - still opens NH sessions in runtime removal/update flows
+  - local removal/managed-folder cleanup seams are EF-safe in the guarded SQLite path
+  - raw `ISession` overloads remain as compatibility entrypoints, but are no longer the next guarded SQLite blocker
   - key file: [VideoService.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Services/VideoService.cs)
 - `Scanner`
-  - still opens NH session during scan pipeline work
+  - `DeleteAllErroredFiles()` is EF-safe in the guarded SQLite path
+  - broader scan pipeline work still exists, but the local cleanup seam is no longer the blocker
   - key file: [Scanner.cs](/Users/uwe/Documents/GitHub/ShokoServer_fork/Shoko.Server/Utilities/Scanner.cs)
 
 Status:
-- Local/runtime and important, but broader than the grouping/stat seam.
-- Good follow-up target after grouping/stat migration.
+- The small deterministic local cleanup seams in this category are now covered.
+- The remaining runtime work here is broader than the repository/query seams that were just migrated.
 
 #### Ranked Explicit-session Frontier
 
-1. `AnimeSeriesRepository` raw-SQL maintenance query surface
+1. `AnimeGroupCreator` / `AutoAnimeGroupCalculator` broader grouping-stat seam
    - deterministic/local
    - no live provider/network dependency
-   - still opens NH directly for maintenance list queries
-   - first proven boundary:
-     - `SQLite_AnimeSeriesRepository_GetWithMissingEpisodes_EfOnlyStillRequiresNhSessionFactory`
-2. `ActionService.RemoveRecordsWithoutPhysicalFiles(...)`
+   - still contains explicit NH session/stateless-session orchestration and raw SQL
+   - already characterized by the existing grouping/stat test set
+2. intentional compatibility fallback: parameterless `BaseCachedRepository.Populate()`
    - deterministic/local
-   - now EF-safe in the SQLite EF-only path
-3. `VideoService.RemoveManagedFolder(...)` / `RemoveRecord(...)`
-   - deterministic/local
-   - now EF-safe in the SQLite EF-only path
-4. `Scanner.DeleteAllErroredFiles()`
-   - deterministic/local
-   - now EF-safe in the SQLite EF-only path
-5. live provider/network-adjacent orchestration
+   - still intentionally NH-backed
+   - characterization test:
+     - `SQLite_BaseCachedRepository_ParameterlessPopulate_EfOnlyStillRequiresNhSessionFactory`
+3. live provider/network-adjacent orchestration
    - runtime-important, but intentionally lower priority while offline/local seams remain
-6. `DatabaseFixes` and provider DB maintenance code
+4. `DatabaseFixes` and provider DB maintenance code
    - explicit NH-heavy, but not the next runtime migration target
 
 ### 5. Database Maintenance Path
@@ -244,15 +239,16 @@ Updated next repository target:
 
 ## Recommended Next Migration Target
 
-The next best migration target is the `AnimeSeriesRepository` raw-SQL maintenance query surface, starting with `GetWithMissingEpisodes(bool collecting)`.
+The next best migration target is the broader deterministic/local grouping-stat seam centered on `AnimeGroupCreator` and `AutoAnimeGroupCalculator`.
 
 Why this seam next:
 
 - deterministic and local
 - no live AniDB/provider dependency
 - the smallest local cleanup seams (`ActionService`, `VideoService`, `Scanner.DeleteAllErroredFiles`) are now covered in the guarded SQLite path
-- `AnimeSeriesRepository` still contains deterministic NH-only maintenance list queries that are narrower than reopening the full grouping/stat engine
-- migrating this query surface should reduce a real remaining runtime NH dependency without widening into provider/network or maintenance infrastructure
+- the narrow `AnimeSeriesRepository` maintenance query surface is now covered
+- there is no new clearly small deterministic repository/service seam left besides the intentional `BaseCachedRepository.Populate()` fallback
+- the remaining high-value work is the already-characterized broad grouping/stat area rather than another isolated helper/query
 
 ## Current Release Readiness
 
