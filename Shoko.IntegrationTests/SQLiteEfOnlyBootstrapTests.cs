@@ -11,6 +11,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using NLog;
+using NLog.Config;
 using Quartz;
 using Shoko.Abstractions.Video.Events;
 using Shoko.Abstractions.Video.Enums;
@@ -35,11 +38,122 @@ namespace Shoko.IntegrationTests;
 [Collection("Database")]
 public class SQLiteEfOnlyBootstrapTests
 {
+    private static readonly string[] LongRunNLogClampPatterns =
+    [
+        "Microsoft.EntityFrameworkCore*",
+        "Microsoft.Data.Sqlite*",
+        "Command",
+        "Connection",
+        "Infrastructure",
+        "Query"
+    ];
+
+    private static int _longRunAppHostLoggingClampDepth;
+
     private static void ResetEfOnlyTestState()
     {
         SQLite.ResetTestState();
         QuartzExtensions.ResetTestState();
         QuartzStartup.ResetTestState();
+    }
+
+    private static void ApplyLongRunAppHostLoggingClamp(Shoko.Server.Settings.IServerSettings settings)
+    {
+        settings.DumpSettingsOnStart = false;
+        UpsertLogRule(settings.Logging.LogLevelRules, "Microsoft.EntityFrameworkCore.*", Microsoft.Extensions.Logging.LogLevel.Warning);
+        UpsertLogRule(settings.Logging.LogLevelRules, "Microsoft.EntityFrameworkCore.Database.*", Microsoft.Extensions.Logging.LogLevel.Warning);
+        UpsertLogRule(settings.Logging.LogLevelRules, "Microsoft.EntityFrameworkCore.Query.*", Microsoft.Extensions.Logging.LogLevel.Warning);
+        UpsertLogRule(settings.Logging.LogLevelRules, "Microsoft.EntityFrameworkCore.Infrastructure", Microsoft.Extensions.Logging.LogLevel.Warning);
+        UpsertLogRule(settings.Logging.LogLevelRules, "Microsoft.EntityFrameworkCore.ChangeTracking.*", Microsoft.Extensions.Logging.LogLevel.Warning);
+    }
+
+    private static void UpsertLogRule(System.Collections.Generic.List<Shoko.Server.Settings.LogLevelRuleConfiguration> rules, string pattern, Microsoft.Extensions.Logging.LogLevel maxLevel)
+    {
+        var existing = rules.FirstOrDefault(rule => string.Equals(rule.LoggerNamePattern, pattern, StringComparison.Ordinal));
+        if (existing is not null)
+        {
+            existing.MaxLevel = maxLevel;
+            existing.Final = true;
+            return;
+        }
+
+        rules.Add(new()
+        {
+            LoggerNamePattern = pattern,
+            MaxLevel = maxLevel,
+            Final = true
+        });
+    }
+
+    private static IDisposable BeginLongRunAppHostLoggingClamp()
+    {
+        Interlocked.Increment(ref _longRunAppHostLoggingClampDepth);
+        return new DisposableAction(() =>
+        {
+            if (Interlocked.Decrement(ref _longRunAppHostLoggingClampDepth) == 0)
+                RemoveLongRunAppHostNLogClamp();
+        });
+    }
+
+    private static void ApplyCurrentLongRunAppHostNLogClampIfRequested()
+    {
+        if (Volatile.Read(ref _longRunAppHostLoggingClampDepth) <= 0)
+            return;
+
+        var config = LogManager.Configuration;
+        if (config is null)
+            return;
+
+        var voidTarget = config.FindTargetByName("void");
+        if (voidTarget is null)
+            return;
+
+        var added = false;
+        foreach (var pattern in LongRunNLogClampPatterns)
+        {
+            if (config.LoggingRules.Any(rule =>
+                    string.Equals(rule.LoggerNamePattern, pattern, StringComparison.Ordinal) &&
+                    rule.Targets.Contains(voidTarget) &&
+                    rule.Final))
+                continue;
+
+            var rule = new LoggingRule(pattern, NLog.LogLevel.Trace, NLog.LogLevel.Info, voidTarget)
+            {
+                Final = true
+            };
+            config.LoggingRules.Insert(0, rule);
+            added = true;
+        }
+
+        if (added)
+            LogManager.ReconfigExistingLoggers();
+    }
+
+    private static void RemoveLongRunAppHostNLogClamp()
+    {
+        var config = LogManager.Configuration;
+        if (config is null)
+            return;
+
+        var voidTarget = config.FindTargetByName("void");
+        if (voidTarget is null)
+            return;
+
+        var removed = false;
+        for (var i = config.LoggingRules.Count - 1; i >= 0; i--)
+        {
+            var rule = config.LoggingRules[i];
+            if (!rule.Targets.Contains(voidTarget) || !rule.Final)
+                continue;
+            if (!LongRunNLogClampPatterns.Contains(rule.LoggerNamePattern, StringComparer.Ordinal))
+                continue;
+
+            config.LoggingRules.RemoveAt(i);
+            removed = true;
+        }
+
+        if (removed)
+            LogManager.ReconfigExistingLoggers();
     }
 
     [Fact]
@@ -273,6 +387,7 @@ public class SQLiteEfOnlyBootstrapTests
         await File.WriteAllBytesAsync(absolutePath, new byte[4096]);
 
         var originalShokoHome = Environment.GetEnvironmentVariable("SHOKO_HOME");
+        using var loggingClamp = BeginLongRunAppHostLoggingClamp();
         try
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
@@ -286,7 +401,9 @@ public class SQLiteEfOnlyBootstrapTests
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Starting seed host.");
-            var seedHost = await StartServiceAsync(waitForStartupComplete: true);
+            var seedHost = await StartServiceAsync(
+                waitForStartupComplete: true,
+                configureSettings: ApplyLongRunAppHostLoggingClamp);
             WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Seed host started.");
             int folderId;
             try
@@ -330,6 +447,7 @@ public class SQLiteEfOnlyBootstrapTests
                 waitForStartupComplete: false,
                 configureSettings: settings =>
                 {
+                    ApplyLongRunAppHostLoggingClamp(settings);
                     settings.Import.RunOnStart = true;
                     settings.Import.ScanDropFoldersOnStart = false;
                     settings.Import.FileLockChecking = false;
@@ -405,6 +523,7 @@ public class SQLiteEfOnlyBootstrapTests
         await WriteTinyValidVideoFixtureAsync(absolutePath);
 
         var originalShokoHome = Environment.GetEnvironmentVariable("SHOKO_HOME");
+        using var loggingClamp = BeginLongRunAppHostLoggingClamp();
         try
         {
             Environment.SetEnvironmentVariable("SHOKO_HOME", tempDir.Replace('\\', '/'));
@@ -418,7 +537,9 @@ public class SQLiteEfOnlyBootstrapTests
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
             WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Starting seed host.");
-            var seedHost = await StartServiceAsync(waitForStartupComplete: true);
+            var seedHost = await StartServiceAsync(
+                waitForStartupComplete: true,
+                configureSettings: ApplyLongRunAppHostLoggingClamp);
             WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Seed host started.");
             int folderId;
             try
@@ -462,6 +583,7 @@ public class SQLiteEfOnlyBootstrapTests
                 waitForStartupComplete: false,
                 configureSettings: settings =>
                 {
+                    ApplyLongRunAppHostLoggingClamp(settings);
                     settings.Import.RunOnStart = true;
                     settings.Import.ScanDropFoldersOnStart = false;
                     settings.Import.FileLockChecking = false;
@@ -833,6 +955,7 @@ public class SQLiteEfOnlyBootstrapTests
     {
         WriteMemorySnapshot(nameof(StartServiceUntilAboutToStartAsync), $"Creating SystemService. waitForStartupComplete={waitForStartupComplete}.");
         var systemService = new SystemService();
+        ApplyCurrentLongRunAppHostNLogClampIfRequested();
         var settings = Utils.SettingsProvider.GetSettings();
         settings.FirstRun = false;
         settings.AniDb.Username = "integration-test";
@@ -1112,6 +1235,16 @@ public class SQLiteEfOnlyBootstrapTests
 
         lastProgressAt = now;
         Console.WriteLine($"[{now:O}] [{operationName}] +{(now - startedAt):mm\\:ss} {message}");
+    }
+
+    private sealed class DisposableAction(Action onDispose) : IDisposable
+    {
+        private Action? _onDispose = onDispose;
+
+        public void Dispose()
+        {
+            Interlocked.Exchange(ref _onDispose, null)?.Invoke();
+        }
     }
 
     private static async Task AssertProcessFileJobUsesCachedReleaseOfflineAsync(int videoLocalId)
