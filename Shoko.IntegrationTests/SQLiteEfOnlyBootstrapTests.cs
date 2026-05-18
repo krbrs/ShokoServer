@@ -947,6 +947,22 @@ public class SQLiteEfOnlyBootstrapTests
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Second Quartz pending-processing wait completed.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after second Quartz wait.");
+        if (Utils.ServiceContainer is not null)
+        {
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var schedulerFactory = scope.ServiceProvider.GetRequiredService<ISchedulerFactory>();
+            var scheduler = await schedulerFactory.GetScheduler();
+            WriteTestProgress(nameof(StopHostAndDrainAsync), "Shutting down Quartz scheduler explicitly.");
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{nameof(StopHostAndDrainAsync)}] QUARTZ beforeShutdown " +
+                $"started={scheduler.IsStarted} shutdown={scheduler.IsShutdown} standby={scheduler.InStandbyMode}");
+            if (!scheduler.IsShutdown)
+                await scheduler.Shutdown(waitForJobsToComplete: true);
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{nameof(StopHostAndDrainAsync)}] QUARTZ afterShutdown " +
+                $"started={scheduler.IsStarted} shutdown={scheduler.IsShutdown} standby={scheduler.InStandbyMode}");
+            await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after explicit Quartz shutdown.");
+        }
         switch (host)
         {
             case IAsyncDisposable asyncDisposable:
