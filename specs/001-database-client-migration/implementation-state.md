@@ -150,22 +150,19 @@ Status:
 
 #### Ranked Explicit-session Frontier
 
-1. `AnimeGroupCreator` / `AutoAnimeGroupCalculator` broader grouping-stat seam
-   - deterministic/local
-   - no live provider/network dependency
-   - guarded SQLite runtime path is mostly migrated; remaining meaningful NH is now primarily compatibility fallback infrastructure and deeper non-guarded legacy runtime paths outside the proven test boundary
-   - already characterized by the existing grouping/stat test set
-   - smallest proposed slice:
-     - add the next characterization around failure recovery / compatibility fallback before touching parameterless `Populate()` or broader recreate orchestration
-2. intentional compatibility fallback: parameterless `BaseCachedRepository.Populate()`
+1. intentional compatibility fallback: parameterless `BaseCachedRepository.Populate()`
    - deterministic/local
    - still intentionally NH-backed
+   - currently the most visible remaining NH seam reachable from the already-migrated grouping/stat runtime surface
    - characterization test:
      - `SQLite_BaseCachedRepository_ParameterlessPopulate_EfOnlyStillRequiresNhSessionFactory`
-3. live provider/network-adjacent orchestration
-   - runtime-important, but intentionally lower priority while offline/local seams remain
-4. `DatabaseFixes` and provider DB maintenance code
+2. live provider/network-adjacent orchestration
+   - runtime-important, but intentionally outside the current offline SQLite proof boundary
+   - first meaningful boundary remains after cached/offline `ProcessFileJob.Process()` behavior
+3. `DatabaseFixes` and provider DB maintenance code
    - explicit NH-heavy, but not the next runtime migration target
+4. broader non-guarded legacy repository/service paths
+   - still present in the codebase, but not currently proven reachable from the guarded SQLite EF-only runtime path without leaving the deterministic/offline boundary
 
 ### 5. Database Maintenance Path
 
@@ -262,17 +259,26 @@ Updated next repository target:
 
 ## Recommended Next Migration Target
 
-The next best migration target is the broader deterministic/local grouping-stat seam centered on `AnimeGroupCreator` and `AutoAnimeGroupCalculator`.
+There is no new clearly small deterministic runtime seam left inside the currently proven guarded SQLite EF-only path.
 
-Why this seam next:
+Current safe frontier:
 
-- deterministic and local
-- no live AniDB/provider dependency
-- the smallest local cleanup seams (`ActionService`, `VideoService`, `Scanner.DeleteAllErroredFiles`) are now covered in the guarded SQLite path
-- the narrow `AnimeSeriesRepository` maintenance query surface is now covered
-- there is no new clearly small deterministic repository/service seam left besides the intentional `BaseCachedRepository.Populate()` fallback
-- the remaining high-value work is the already-characterized broad grouping/stat area rather than another isolated helper/query
-- inside that area, the smallest safe next slice is the relation-loading and graph-construction seam in `AutoAnimeGroupCalculator.Create(...)`, not the full `AnimeGroupCreator` recreation/stat persistence flow
+- grouping/stat orchestration is already migrated for the guarded runtime path
+- the small deterministic cleanup seams are already migrated
+- the `AnimeSeriesRepository` maintenance query surface is already migrated
+- representative TMDB/AniDB direct lookup seams are already covered
+
+Exactly one next safe action:
+
+- keep `BaseCachedRepository.Populate()` as intentional compatibility infrastructure for now and do **not** migrate it as an isolated runtime slice unless the branch goal changes from guarded runtime proof to compatibility-infrastructure reduction
+
+Practical next milestone after this point:
+
+- either prepare a PR/checkpoint summary for the guarded SQLite EF-only runtime proof surface
+- or deliberately widen scope into one of the non-runtime frontiers:
+  - compatibility fallback reduction
+  - provider/network runtime behavior
+  - maintenance/bootstrap NH infrastructure
 
 ## Current Release Readiness
 
