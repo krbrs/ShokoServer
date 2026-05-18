@@ -33,6 +33,26 @@
 - MariaDB and SQL Server EF-only bootstrap/runtime implications are not covered by this SQLite-only proof.
 - Production opt-in remains deferred.
 
+## Current PR / Checkpoint Scope
+
+This PR/checkpoint is scoped to:
+
+- guarded SQLite EF-only bootstrap/runtime proof
+- deterministic/local runtime seam cleanup
+- test isolation improvements for the guarded SQLite EF-only validation path
+
+This checkpoint does **not** claim:
+
+- full NHibernate removal
+- production EF-only runtime enablement
+- MariaDB/SQL Server EF-only runtime proof
+- live provider/network runtime proof
+- backend-switch / administrator workflow completion
+
+For this checkpoint, [implementation-state.md](/Users/uwe/Documents/GitHub/ShokoServer_fork/specs/001-database-client-migration/implementation-state.md) is the authoritative current-state document.
+
+Broader unchecked or stale roadmap tasks below remain future work unless they are explicitly reflected as completed in `implementation-state.md`.
+
 ## Status Notes
 
 - Tasks in this file that describe SQLite EF-only bootstrap as missing or unproven are now historical and should be read as completed implementation history rather than current status.
