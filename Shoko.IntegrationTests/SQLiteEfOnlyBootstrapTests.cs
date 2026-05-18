@@ -949,6 +949,7 @@ public class SQLiteEfOnlyBootstrapTests
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Host disposed; resetting EF-only test state.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot before reset.");
         ResetEfOnlyTestState();
+        RepoFactory.ResetTestState();
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot immediately after reset.");
         ForceFullGcAndReport(nameof(StopHostAndDrainAsync), "After reset.");
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
