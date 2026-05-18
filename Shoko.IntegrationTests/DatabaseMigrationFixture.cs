@@ -7,6 +7,8 @@ using System.Threading;
 using Microsoft.Data.SqlClient;
 using MySqlConnector;
 using Microsoft.Extensions.Hosting;
+using Shoko.Server.Databases;
+using Shoko.Server.Scheduling;
 using Shoko.Server.Server;
 using Shoko.Server.Services;
 using Shoko.Server.Settings;
@@ -36,8 +38,17 @@ public sealed class DatabaseMigrationFixture : IDisposable
     private readonly string? _testDatabaseName;
     private IHost? _host;
 
+    private static void ResetSharedTestState()
+    {
+        SQLite.ResetTestState();
+        QuartzExtensions.ResetTestState();
+        QuartzStartup.ResetTestState();
+    }
+
     public DatabaseMigrationFixture()
     {
+        ResetSharedTestState();
+
         // Isolated data directory so this run doesn't touch a real Shoko install.
         _tempDir = Path.Combine(Path.GetTempPath(), $"shoko-integration-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
@@ -103,6 +114,8 @@ public sealed class DatabaseMigrationFixture : IDisposable
             // Best-effort shutdown; don't mask test failures.
         }
 
+        ResetSharedTestState();
+
         try
         {
             DropIsolatedDatabaseSchema();
@@ -130,6 +143,8 @@ public sealed class DatabaseMigrationFixture : IDisposable
         {
             // SQLite connections may still be draining; ignore cleanup errors.
         }
+
+        ResetSharedTestState();
     }
 
     private static (string? OriginalDatabaseName, string? TestDatabaseName) ConfigureIsolatedDatabaseName()
