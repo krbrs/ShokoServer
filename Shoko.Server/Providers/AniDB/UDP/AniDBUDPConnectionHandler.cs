@@ -108,29 +108,6 @@ public partial class AniDBUDPConnectionHandler : ConnectionHandler, IUDPConnecti
         SettingsProvider = settings;
     }
 
-    internal (bool PingTimerExists, bool PingTimerEnabled, bool LogoutTimerExists, bool LogoutTimerEnabled, int LoginFailedCount) GetUdpTestState()
-        => (
-            _pingTimer is not null,
-            _pingTimer?.Enabled ?? false,
-            _logoutTimer is not null,
-            _logoutTimer?.Enabled ?? false,
-            (LoginFailed as MulticastDelegate)?.GetInvocationList().Length ?? 0
-        );
-
-    internal void ResetUdpTestState()
-    {
-        _pingTimer?.Stop();
-        _pingTimer?.Dispose();
-        _pingTimer = null;
-
-        _logoutTimer?.Stop();
-        _logoutTimer?.Dispose();
-        _logoutTimer = null;
-
-        LoginFailed = null;
-        ResetTestState();
-    }
-
     ~AniDBUDPConnectionHandler()
     {
         Logger.LogInformation("Disposing AniDBUDPConnectionHandler...");

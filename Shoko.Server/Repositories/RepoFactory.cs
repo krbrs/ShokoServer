@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Shoko.Server.Databases;
 using Shoko.Server.Repositories.Cached;
@@ -33,19 +32,6 @@ public class RepoFactory
     {
         EfOnlyPopulateSessionCount = 0;
         EfOnlySkippedRepairPassCount = 0;
-    }
-
-    internal static void ResetTestState()
-    {
-        foreach (var field in typeof(RepoFactory).GetFields(BindingFlags.Public | BindingFlags.Static))
-        {
-            if (field.FieldType.IsValueType)
-                continue;
-
-            field.SetValue(null, null);
-        }
-
-        ResetTestCounters();
     }
 
     public static AniDB_Anime_CharacterRepository AniDB_Anime_Character;

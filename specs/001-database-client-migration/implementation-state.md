@@ -1,7 +1,7 @@
 # Implementation State: Database Client Migration
 
 **Feature Branch**: `001-database-client-migration`  
-**Last Updated**: 2026-05-17  
+**Last Updated**: 2026-05-18  
 **Status**: EF Core startup activation is implemented; SQLite EF-only bootstrap/runtime is proven for fresh and upgraded fixtures under the internal test guard; production SQLite EF-only opt-in remains deferred
 
 ---
@@ -40,7 +40,9 @@
   - cached AniDB exact-name lookups
   - direct AniDB lookup/stateless direct lookup clusters
   - representative TMDB direct base/text/optional lookup paths
-- Combined EF-only SQLite startup/runtime tests pass in one VSTest process.
+- Long existing-db app-host `RunOnStart` tests now include progress logging around startup and boundary waits.
+- EF/NLog diagnostic flood during long SQLite EF-only app-host tests is clamped in the test harness.
+- Test cleanup now explicitly shuts down Quartz in the long app-host path to reduce cross-lifecycle recurring-job leakage.
 
 ## Remaining Gaps
 
@@ -50,6 +52,8 @@
 - The live provider/network branch after `VideoReleaseService.SearchStarted` is intentionally unproven.
 - MariaDB and SQL Server EF-only bootstrap/runtime implications are not part of the SQLite-only proof.
 - Production opt-in remains deferred; there is still no broad production SQLite EF-only switch.
+- Grouped long existing-db app-host tests should still be treated as isolated validation runs by default.
+- A retained multi-GiB baseline was observed during grouped app-host memory investigation, but it is not currently treated as a migration blocker.
 
 ## Runtime NH Dependency Inventory
 

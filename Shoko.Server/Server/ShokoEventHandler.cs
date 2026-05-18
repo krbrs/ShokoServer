@@ -36,11 +36,6 @@ public class ShokoEventHandler
 
     public static ShokoEventHandler Instance => _instance ??= new();
 
-    internal static void ResetTestState()
-    {
-        _instance = null;
-    }
-
     public void OnFileDeleted(IManagedFolder folder, IVideoFile vlp, IVideo vl)
     {
         var path = vlp.RelativePath;

@@ -50,35 +50,6 @@ public class SettingsProvider : ISettingsProvider, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    internal (int ProviderSavedSubscriberCount, string ProviderSavedSubscribers, bool Ready, bool HasSeriesTitleOrder, bool HasEpisodeTitleOrder, bool HasDescriptionTitleOrder) GetTestState()
-    {
-        var savedField = typeof(ConfigurationProvider<ServerSettings>).GetField("Saved", BindingFlags.Instance | BindingFlags.NonPublic);
-        var savedDelegate = savedField?.GetValue(_configurationProvider) as MulticastDelegate;
-        var savedSubscribers = savedDelegate is null
-            ? "none"
-            : string.Join(", ", savedDelegate.GetInvocationList().Select(invocation =>
-                $"{invocation.Method.DeclaringType?.Name ?? "<unknown>"}.{invocation.Method.Name}"));
-
-        return (
-            savedDelegate?.GetInvocationList().Length ?? 0,
-            savedSubscribers,
-            _ready,
-            _seriesTitleLanguageOrder is not null,
-            _episodeTitleLanguageOrder is not null,
-            _descriptionLanguageOrder is not null
-        );
-    }
-
-    internal void ResetTestState()
-    {
-        _configurationProvider.Saved -= OnSettingsSaved;
-        _systemService.AboutToStart -= OnSettingsReady;
-        _seriesTitleLanguageOrder = null;
-        _episodeTitleLanguageOrder = null;
-        _descriptionLanguageOrder = null;
-        _ready = false;
-    }
-
     private void OnSettingsReady(object? sender, EventArgs eventArgs)
     {
         _ready = true;
