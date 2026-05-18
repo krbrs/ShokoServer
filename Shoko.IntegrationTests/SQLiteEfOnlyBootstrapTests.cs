@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Diagnostics;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
@@ -920,6 +921,7 @@ public class SQLiteEfOnlyBootstrapTests
     private static async Task StopHostAndDrainAsync(IHost host)
     {
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Entering drain helper.");
+        WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Initial repository cache snapshot before drain.");
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing before StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "First Quartz pending-processing wait completed.");
@@ -945,7 +947,10 @@ public class SQLiteEfOnlyBootstrapTests
         }
 
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Host disposed; resetting EF-only test state.");
+        WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot before reset.");
         ResetEfOnlyTestState();
+        WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot immediately after reset.");
+        ForceFullGcAndReport(nameof(StopHostAndDrainAsync), "After reset.");
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
     }
 
@@ -1225,6 +1230,60 @@ public class SQLiteEfOnlyBootstrapTests
         Console.WriteLine(
             $"[{DateTime.UtcNow:O}] [{operationName}] MEM managed={managedBytes / 1024.0 / 1024.0:F1}MiB " +
             $"workingSet={process.WorkingSet64 / 1024.0 / 1024.0:F1}MiB private={process.PrivateMemorySize64 / 1024.0 / 1024.0:F1}MiB | {message}");
+    }
+
+    private static void ForceFullGcAndReport(string operationName, string message)
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        WriteMemorySnapshot(operationName, $"Forced full GC completed. {message}");
+        WriteRepoCacheSnapshot(operationName, $"Repository cache snapshot after forced GC. {message}");
+    }
+
+    private static void WriteRepoCacheSnapshot(string operationName, string message)
+    {
+        try
+        {
+            var cacheFields = typeof(RepoFactory).GetFields(BindingFlags.Public | BindingFlags.Static)
+                .Select(field => (Field: field, Value: field.GetValue(null)))
+                .Where(tuple => tuple.Value is not null)
+                .Select(tuple => new
+                {
+                    tuple.Field.Name,
+                    Cache = tuple.Value!.GetType().GetField("Cache", BindingFlags.Instance | BindingFlags.Public)?.GetValue(tuple.Value)
+                })
+                .Select(tuple =>
+                {
+                    var count = TryGetCacheCount(tuple.Cache);
+                    return new { tuple.Name, Count = count };
+                })
+                .Where(tuple => tuple.Count >= 0)
+                .OrderByDescending(tuple => tuple.Count)
+                .ToList();
+
+            var totalEntries = cacheFields.Sum(tuple => tuple.Count);
+            var topEntries = string.Join(", ", cacheFields.Take(8).Select(tuple => $"{tuple.Name}={tuple.Count:N0}"));
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{operationName}] CACHE repos={cacheFields.Count:N0} totalEntries={totalEntries:N0} " +
+                $"serviceContainerNull={Utils.ServiceContainer is null} | {message} | top={topEntries}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] CACHE snapshot failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static int TryGetCacheCount(object? cache)
+    {
+        if (cache is null)
+            return -1;
+
+        var countProperty = cache.GetType().GetProperty("Count", BindingFlags.Instance | BindingFlags.Public);
+        if (countProperty?.GetValue(cache) is int count)
+            return count;
+
+        return -1;
     }
 
     private static void WritePollingProgressIfDue(ref DateTime lastProgressAt, DateTime startedAt, string operationName, string message)
