@@ -117,6 +117,22 @@ public class TmdbMetadataService : ITmdbMetadataService
         }
     }
 
+    internal static (bool HasInstance, bool HasRawClient, int ConcurrencyGuardCount, bool HasImageServerUrl) GetTestState()
+        => (_instance is not null, _instance?._rawClient is not null, _instance?._concurrencyGuards.Count ?? 0, _imageServerUrl is not null);
+
+    internal static void ResetTestState()
+    {
+        lock (_instanceLockObj)
+        {
+            _instance = null;
+        }
+
+        lock (_imageServerUrlLockObj)
+        {
+            _imageServerUrl = null;
+        }
+    }
+
     private readonly ILogger<TmdbMetadataService> _logger;
 
     private readonly ISchedulerFactory _schedulerFactory;

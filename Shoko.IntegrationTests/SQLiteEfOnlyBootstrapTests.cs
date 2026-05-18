@@ -28,6 +28,9 @@ using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.GenericJobBuilder;
 using Shoko.Server.Scheduling.Jobs;
 using Shoko.Server.Scheduling.Jobs.Shoko;
+using Shoko.Server.API.SignalR.NLog;
+using Shoko.Server.Providers.TMDB;
+using Shoko.Server;
 using Shoko.Server.Services;
 using Shoko.Server.Utilities;
 using Xunit;
@@ -977,10 +980,17 @@ public class SQLiteEfOnlyBootstrapTests
 
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Host disposed; resetting EF-only test state.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot before reset.");
+        WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot before reset.");
         ResetEfOnlyTestState();
         RepoFactory.ResetTestState();
+        WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after standard reset.");
+        TmdbMetadataService.ResetTestState();
+        WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after TMDB reset.");
+        ShokoEventHandler.ResetTestState();
+        WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after ShokoEventHandler reset.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot immediately after reset.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after reset.");
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Before forced GC after TMDB and ShokoEventHandler reset.");
         ForceFullGcAndReport(nameof(StopHostAndDrainAsync), "After reset.");
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
     }
@@ -1302,6 +1312,47 @@ public class SQLiteEfOnlyBootstrapTests
         catch (Exception ex)
         {
             Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] CACHE snapshot failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static void WriteStaticRootSnapshot(string operationName, string message)
+    {
+        try
+        {
+            var tmdbState = TmdbMetadataService.GetTestState();
+            var eventHandler = ShokoEventHandler.Instance;
+            var eventCounts = typeof(ShokoEventHandler)
+                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+                .Where(field => typeof(MulticastDelegate).IsAssignableFrom(field.FieldType))
+                .Select(field => new
+                {
+                    field.Name,
+                    Count = (field.GetValue(eventHandler) as MulticastDelegate)?.GetInvocationList().Length ?? 0
+                })
+                .Where(entry => entry.Count > 0)
+                .OrderByDescending(entry => entry.Count)
+                .ToList();
+
+            var signalRTarget = LogManager.Configuration?.AllTargets?.OfType<SignalRTarget>().FirstOrDefault();
+            var signalRLogCount = signalRTarget?.Logs?.Count ?? 0;
+            var signalRHandlerCount = typeof(SignalRTarget)
+                .GetField("LogEventHandler", BindingFlags.Instance | BindingFlags.NonPublic)?
+                .GetValue(signalRTarget) is MulticastDelegate signalRDelegate
+                ? signalRDelegate.GetInvocationList().Length
+                : 0;
+
+            var eventSummary = eventCounts.Count == 0
+                ? "none"
+                : string.Join(", ", eventCounts.Select(entry => $"{entry.Name}={entry.Count}"));
+
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{operationName}] ROOTS tmdb.hasInstance={tmdbState.HasInstance} " +
+                $"tmdb.hasRawClient={tmdbState.HasRawClient} tmdb.guards={tmdbState.ConcurrencyGuardCount} tmdb.hasImageServerUrl={tmdbState.HasImageServerUrl} " +
+                $"signalR.logs={signalRLogCount} signalR.handlers={signalRHandlerCount} shokoEvents={eventSummary} | {message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] ROOTS snapshot failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
