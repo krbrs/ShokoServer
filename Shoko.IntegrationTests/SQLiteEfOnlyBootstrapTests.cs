@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
@@ -263,6 +264,7 @@ public class SQLiteEfOnlyBootstrapTests
     [Fact]
     public async Task SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory()
     {
+        WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Test start.");
         var tempDir = Path.Combine(Path.GetTempPath(), $"shoko-efonly-existing-runonstart-{Guid.NewGuid():N}");
         var importDir = Path.Combine(tempDir, "import");
         Directory.CreateDirectory(importDir);
@@ -283,7 +285,9 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
+            WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Starting seed host.");
             var seedHost = await StartServiceAsync(waitForStartupComplete: true);
+            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Seed host started.");
             int folderId;
             try
             {
@@ -309,7 +313,9 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Stopping seed host.");
                 await StopHostAndDrainAsync(seedHost);
+                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Seed host stopped.");
             }
 
             Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
@@ -319,6 +325,7 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
+            WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Starting main host.");
             var (host, systemService, _) = await StartServiceUntilAboutToStartAsync(
                 waitForStartupComplete: false,
                 configureSettings: settings =>
@@ -328,6 +335,7 @@ public class SQLiteEfOnlyBootstrapTests
                     settings.Import.FileLockChecking = false;
                     settings.Import.AggressiveFileLockChecking = false;
                 });
+            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Main host created; about-to-start reached.");
 
             var queueStateEventHandler = Utils.ServiceContainer.GetRequiredService<QueueStateEventHandler>();
             var observedHashJobForFile = false;
@@ -369,7 +377,9 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 queueStateEventHandler.QueueItemsAdded -= onQueueItemsAdded;
                 queueStateEventHandler.ExecutingJobsChanged -= onQueueChanged;
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Stopping main host.");
                 await StopHostAndDrainAsync(host);
+                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Main host stopped.");
             }
         }
         finally
@@ -379,12 +389,14 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
             await DeleteDirectoryWithRetriesAsync(tempDir);
+            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Test end.");
         }
     }
 
     [Fact]
     public async Task SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory()
     {
+        WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Test start.");
         var tempDir = Path.Combine(Path.GetTempPath(), $"shoko-efonly-existing-validvideo-{Guid.NewGuid():N}");
         var importDir = Path.Combine(tempDir, "import");
         Directory.CreateDirectory(importDir);
@@ -405,7 +417,9 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
+            WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Starting seed host.");
             var seedHost = await StartServiceAsync(waitForStartupComplete: true);
+            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Seed host started.");
             int folderId;
             try
             {
@@ -431,7 +445,9 @@ public class SQLiteEfOnlyBootstrapTests
             }
             finally
             {
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Stopping seed host.");
                 await StopHostAndDrainAsync(seedHost);
+                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Seed host stopped.");
             }
 
             Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
@@ -441,6 +457,7 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
+            WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Starting main host.");
             var (host, systemService, _) = await StartServiceUntilAboutToStartAsync(
                 waitForStartupComplete: false,
                 configureSettings: settings =>
@@ -450,6 +467,7 @@ public class SQLiteEfOnlyBootstrapTests
                     settings.Import.FileLockChecking = false;
                     settings.Import.AggressiveFileLockChecking = false;
                 });
+            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Main host created; about-to-start reached.");
 
             var queueStateEventHandler = Utils.ServiceContainer.GetRequiredService<QueueStateEventHandler>();
             var observedHashJobForFile = false;
@@ -509,7 +527,9 @@ public class SQLiteEfOnlyBootstrapTests
             {
                 queueStateEventHandler.QueueItemsAdded -= onQueueItemsAdded;
                 queueStateEventHandler.ExecutingJobsChanged -= onQueueChanged;
+                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Stopping main host.");
                 await StopHostAndDrainAsync(host);
+                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Main host stopped.");
             }
         }
         finally
@@ -519,6 +539,7 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             Environment.SetEnvironmentVariable("SHOKO_HOME", originalShokoHome);
             await DeleteDirectoryWithRetriesAsync(tempDir);
+            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Test end.");
         }
     }
 
@@ -776,27 +797,41 @@ public class SQLiteEfOnlyBootstrapTests
 
     private static async Task StopHostAndDrainAsync(IHost host)
     {
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Entering drain helper.");
+        WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing before StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "First Quartz pending-processing wait completed.");
+        WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending recurring scheduling before StopAsync.");
         await QuartzStartup.WaitForPendingRecurringSchedulingForTests().WaitAsync(TimeSpan.FromSeconds(30));
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Recurring scheduling wait completed.");
+        WriteTestProgress(nameof(StopHostAndDrainAsync), "Calling host.StopAsync.");
         await host.StopAsync(TimeSpan.FromSeconds(30));
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "host.StopAsync completed.");
+        WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing after StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Second Quartz pending-processing wait completed.");
         switch (host)
         {
             case IAsyncDisposable asyncDisposable:
+                WriteTestProgress(nameof(StopHostAndDrainAsync), "Disposing host asynchronously.");
                 await asyncDisposable.DisposeAsync();
                 break;
             case IDisposable disposable:
+                WriteTestProgress(nameof(StopHostAndDrainAsync), "Disposing host synchronously.");
                 disposable.Dispose();
                 break;
         }
 
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Host disposed; resetting EF-only test state.");
         ResetEfOnlyTestState();
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
     }
 
     private static async Task<(IHost Host, SystemService SystemService, TaskCompletionSource AboutToStart)> StartServiceUntilAboutToStartAsync(
         bool waitForStartupComplete = false,
         Action<Shoko.Server.Settings.IServerSettings>? configureSettings = null)
     {
+        WriteMemorySnapshot(nameof(StartServiceUntilAboutToStartAsync), $"Creating SystemService. waitForStartupComplete={waitForStartupComplete}.");
         var systemService = new SystemService();
         var settings = Utils.SettingsProvider.GetSettings();
         settings.FirstRun = false;
@@ -813,8 +848,10 @@ public class SQLiteEfOnlyBootstrapTests
         systemService.AboutToStart += (_, _) => aboutToStart.TrySetResult();
         systemService.StartupFailed += (_, args) => startupFailed.TrySetResult(args.Exception);
 
+        WriteTestProgress(nameof(StartServiceUntilAboutToStartAsync), "Calling SystemService.StartAsync.");
         var host = await systemService.StartAsync();
         Assert.NotNull(host);
+        WriteMemorySnapshot(nameof(StartServiceUntilAboutToStartAsync), "SystemService.StartAsync returned host.");
 
         try
         {
@@ -834,7 +871,11 @@ public class SQLiteEfOnlyBootstrapTests
             }
 
             if (waitForStartupComplete)
+            {
+                WriteTestProgress(nameof(StartServiceUntilAboutToStartAsync), "Waiting for startup completion inside helper.");
                 await systemService.WaitForStartupAsync().WaitAsync(TimeSpan.FromMinutes(10));
+                WriteMemorySnapshot(nameof(StartServiceUntilAboutToStartAsync), "Startup completion wait inside helper finished.");
+            }
         }
         catch (Exception ex)
         {
@@ -1053,6 +1094,15 @@ public class SQLiteEfOnlyBootstrapTests
 
     private static void WriteTestProgress(string testName, string message)
         => Console.WriteLine($"[{DateTime.UtcNow:O}] [{testName}] {message}");
+
+    private static void WriteMemorySnapshot(string operationName, string message)
+    {
+        var process = Process.GetCurrentProcess();
+        var managedBytes = GC.GetTotalMemory(false);
+        Console.WriteLine(
+            $"[{DateTime.UtcNow:O}] [{operationName}] MEM managed={managedBytes / 1024.0 / 1024.0:F1}MiB " +
+            $"workingSet={process.WorkingSet64 / 1024.0 / 1024.0:F1}MiB private={process.PrivateMemorySize64 / 1024.0 / 1024.0:F1}MiB | {message}");
+    }
 
     private static void WritePollingProgressIfDue(ref DateTime lastProgressAt, DateTime startedAt, string operationName, string message)
     {
