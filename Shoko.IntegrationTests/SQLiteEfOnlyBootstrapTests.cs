@@ -17,6 +17,8 @@ using Microsoft.Extensions.Logging;
 using NLog;
 using NLog.Config;
 using Quartz;
+using Shoko.Abstractions.Config;
+using Shoko.Abstractions.Config.Services;
 using Shoko.Abstractions.Core.Services;
 using Shoko.Abstractions.Metadata.Anidb.Services;
 using Shoko.Abstractions.Video.Events;
@@ -39,6 +41,8 @@ using Shoko.Server.API.SignalR.NLog;
 using Shoko.Server.Providers.TMDB;
 using Shoko.Server;
 using Shoko.Server.Services;
+using Shoko.Server.Services.Configuration;
+using Shoko.Server.Settings;
 using Shoko.Server.Utilities;
 using Xunit;
 
@@ -960,6 +964,7 @@ public class SQLiteEfOnlyBootstrapTests
         WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Initial weak-reference snapshot before drain.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Initial background state before drain.");
         WriteAniDbPublisherSnapshot(nameof(StopHostAndDrainAsync), "AniDB publisher snapshot before drain.");
+        WriteConfigurationPublisherSnapshot(nameof(StopHostAndDrainAsync), "Configuration/settings snapshot before drain.");
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing before StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "First Quartz pending-processing wait completed.");
@@ -1000,6 +1005,12 @@ public class SQLiteEfOnlyBootstrapTests
                 $"started={scheduler.IsStarted} shutdown={scheduler.IsShutdown} standby={scheduler.InStandbyMode}");
             await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after explicit Quartz shutdown.");
         }
+        WriteConfigurationPublisherSnapshot(nameof(StopHostAndDrainAsync), "Configuration/settings snapshot before config reset hook.");
+        ResetConfigurationPublisherTestState();
+        WriteConfigurationPublisherSnapshot(nameof(StopHostAndDrainAsync), "Configuration/settings snapshot after config reset hook.");
+        WriteAniDbPublisherSnapshot(nameof(StopHostAndDrainAsync), "AniDB publisher snapshot before AniDB reset hook.");
+        ResetAniDbPublisherTestState();
+        WriteAniDbPublisherSnapshot(nameof(StopHostAndDrainAsync), "AniDB publisher snapshot after AniDB reset hook.");
         switch (host)
         {
             case IAsyncDisposable asyncDisposable:
@@ -1022,8 +1033,6 @@ public class SQLiteEfOnlyBootstrapTests
         WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after TMDB reset.");
         ShokoEventHandler.ResetTestState();
         WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after ShokoEventHandler reset.");
-        ResetAniDbPublisherTestState();
-        WriteAniDbPublisherSnapshot(nameof(StopHostAndDrainAsync), "AniDB publisher snapshot after AniDB reset hook.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot immediately after reset.");
         WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Weak-reference snapshot immediately after reset.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after reset.");
@@ -1410,6 +1419,9 @@ public class SQLiteEfOnlyBootstrapTests
         var provider = scope.ServiceProvider;
 
         CaptureWeakReference(provider, probes, "ISystemService", typeof(ISystemService));
+        CaptureWeakReference(provider, probes, "IConfigurationService", typeof(IConfigurationService));
+        CaptureWeakReference(provider, probes, "ISettingsProvider", typeof(Shoko.Server.Settings.ISettingsProvider));
+        CaptureWeakReference(provider, probes, "ConfigurationProvider<ServerSettings>", typeof(ConfigurationProvider<ServerSettings>));
         CaptureWeakReference(provider, probes, "IPluginManager", typeof(Shoko.Abstractions.Plugin.IPluginManager));
         CaptureWeakReference(provider, probes, "IVideoService", typeof(IVideoService));
         CaptureWeakReference(provider, probes, "FileWatcherService", typeof(FileWatcherService));
@@ -1485,6 +1497,44 @@ public class SQLiteEfOnlyBootstrapTests
         }
     }
 
+    private static void WriteConfigurationPublisherSnapshot(string operationName, string message)
+    {
+        try
+        {
+            if (Utils.ServiceContainer is null)
+            {
+                Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] CONFIG providers=n/a serviceContainerNull=True | {message}");
+                return;
+            }
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var configurationService = scope.ServiceProvider.GetRequiredService<IConfigurationService>() as ConfigurationService;
+            var settingsProvider = scope.ServiceProvider.GetRequiredService<Shoko.Server.Settings.ISettingsProvider>() as SettingsProvider;
+
+            var configurationState = configurationService?.GetTestState();
+            var settingsState = settingsProvider?.GetTestState();
+
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{operationName}] CONFIG " +
+                $"config.savedCount={configurationState?.SavedSubscriberCount ?? -1} " +
+                $"config.requiresRestartCount={configurationState?.RequiresRestartSubscriberCount ?? -1} " +
+                $"config.loaded={configurationState?.LoadedConfigurationsCount ?? -1} " +
+                $"config.savedMemory={configurationState?.SavedMemoryConfigurationsCount ?? -1} " +
+                $"config.savedTargets={configurationState?.SavedSubscribers ?? "n/a"} " +
+                $"config.restartTargets={configurationState?.RequiresRestartSubscribers ?? "n/a"} " +
+                $"settings.providerSavedCount={settingsState?.ProviderSavedSubscriberCount ?? -1} " +
+                $"settings.providerSavedTargets={settingsState?.ProviderSavedSubscribers ?? "n/a"} " +
+                $"settings.ready={settingsState?.Ready ?? false} " +
+                $"settings.seriesOrder={settingsState?.HasSeriesTitleOrder ?? false} " +
+                $"settings.episodeOrder={settingsState?.HasEpisodeTitleOrder ?? false} " +
+                $"settings.descriptionOrder={settingsState?.HasDescriptionTitleOrder ?? false} | {message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] CONFIG snapshot failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     private static void ResetAniDbPublisherTestState()
     {
         if (Utils.ServiceContainer is null)
@@ -1495,6 +1545,18 @@ public class SQLiteEfOnlyBootstrapTests
             udpHandler.ResetUdpTestState();
         if (scope.ServiceProvider.GetRequiredService<IHttpConnectionHandler>() is AniDBHttpConnectionHandler httpHandler)
             httpHandler.ResetTestState();
+    }
+
+    private static void ResetConfigurationPublisherTestState()
+    {
+        if (Utils.ServiceContainer is null)
+            return;
+
+        using var scope = Utils.ServiceContainer.CreateScope();
+        if (scope.ServiceProvider.GetRequiredService<IConfigurationService>() is ConfigurationService configurationService)
+            configurationService.ResetTestState();
+        if (scope.ServiceProvider.GetRequiredService<Shoko.Server.Settings.ISettingsProvider>() is SettingsProvider settingsProvider)
+            settingsProvider.ResetTestState();
     }
 
     private static int TryGetCacheCount(object? cache)

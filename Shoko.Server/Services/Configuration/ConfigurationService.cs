@@ -71,6 +71,32 @@ public partial class ConfigurationService : IConfigurationService
 
     public event EventHandler<ConfigurationRequiresRestartEventArgs>? RequiresRestart;
 
+    internal (int SavedSubscriberCount, string SavedSubscribers, int RequiresRestartSubscriberCount, string RequiresRestartSubscribers, int LoadedConfigurationsCount, int SavedMemoryConfigurationsCount) GetTestState()
+    {
+        static string FormatSubscribers(MulticastDelegate? callback)
+            => callback is null
+                ? "none"
+                : string.Join(", ", callback.GetInvocationList().Select(invocation =>
+                    $"{invocation.Method.DeclaringType?.Name ?? "<unknown>"}.{invocation.Method.Name}"));
+
+        return (
+            Saved?.GetInvocationList().Length ?? 0,
+            FormatSubscribers(Saved),
+            RequiresRestart?.GetInvocationList().Length ?? 0,
+            FormatSubscribers(RequiresRestart),
+            _loadedConfigurations.Count,
+            _savedMemoryConfigurations.Count
+        );
+    }
+
+    internal void ResetTestState()
+    {
+        Saved = null;
+        RequiresRestart = null;
+        InternalRestartPendingFor.Clear();
+        InternalLoadedEnvironmentVariables.Clear();
+    }
+
     public ConfigurationService(ILoggerFactory loggerFactory, IApplicationPaths applicationPaths, IPluginManager pluginManager)
     {
         _logger = loggerFactory.CreateLogger<ConfigurationService>();
