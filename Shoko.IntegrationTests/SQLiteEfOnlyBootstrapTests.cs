@@ -406,40 +406,48 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
+            HostCleanupSnapshot? seedHostCleanupSnapshot = null;
             WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Starting seed host.");
-            var seedHost = await StartServiceAsync(
-                waitForStartupComplete: true,
-                configureSettings: ApplyLongRunAppHostLoggingClamp);
-            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Seed host started.");
             int folderId;
-            try
             {
-                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
-
-                foreach (var existingFolder in RepoFactory.ShokoManagedFolder.GetAll())
+                var seedHost = await StartServiceAsync(
+                    waitForStartupComplete: true,
+                    configureSettings: ApplyLongRunAppHostLoggingClamp);
+                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Seed host started.");
+                try
                 {
-                    if (!existingFolder.IsWatched)
-                        continue;
+                    Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
 
-                    existingFolder.IsWatched = false;
-                    RepoFactory.ShokoManagedFolder.Save(existingFolder);
+                    foreach (var existingFolder in RepoFactory.ShokoManagedFolder.GetAll())
+                    {
+                        if (!existingFolder.IsWatched)
+                            continue;
+
+                        existingFolder.IsWatched = false;
+                        RepoFactory.ShokoManagedFolder.Save(existingFolder);
+                    }
+
+                    var folder = new ShokoManagedFolder
+                    {
+                        Name = $"ExistingRuntime-{Guid.NewGuid():N}",
+                        Path = importDir,
+                        IsWatched = true
+                    };
+                    RepoFactory.ShokoManagedFolder.Save(folder);
+                    folderId = folder.ID;
                 }
-
-                var folder = new ShokoManagedFolder
+                finally
                 {
-                    Name = $"ExistingRuntime-{Guid.NewGuid():N}",
-                    Path = importDir,
-                    IsWatched = true
-                };
-                RepoFactory.ShokoManagedFolder.Save(folder);
-                folderId = folder.ID;
+                    WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Stopping seed host.");
+                    seedHostCleanupSnapshot = await StopHostAndDrainAndCaptureAsync(seedHost);
+                    WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Seed host stopped.");
+                }
             }
-            finally
-            {
-                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Stopping seed host.");
-                await StopHostAndDrainAsync(seedHost);
-                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory), "Seed host stopped.");
-            }
+            Assert.NotNull(seedHostCleanupSnapshot);
+            InspectCleanupSnapshotAfterScopeDrop(
+                nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ReachesHashBoundaryWithoutNhSessionFactory),
+                seedHostCleanupSnapshot!,
+                "Seed host cleanup after scope drop.");
 
             Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
             Assert.True(await EfMigrationsHistoryContainsMigrationAsync(databasePath, "20260509114039_InitialCreate"), "Expected the baseline migration row to persist after the first existing-db startup.");
@@ -542,40 +550,48 @@ public class SQLiteEfOnlyBootstrapTests
             RepoFactory.ResetTestCounters();
             SQLite.ThrowOnSessionFactoryCreateForTests = true;
 
+            HostCleanupSnapshot? seedHostCleanupSnapshot = null;
             WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Starting seed host.");
-            var seedHost = await StartServiceAsync(
-                waitForStartupComplete: true,
-                configureSettings: ApplyLongRunAppHostLoggingClamp);
-            WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Seed host started.");
             int folderId;
-            try
             {
-                Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
-
-                foreach (var existingFolder in RepoFactory.ShokoManagedFolder.GetAll())
+                var seedHost = await StartServiceAsync(
+                    waitForStartupComplete: true,
+                    configureSettings: ApplyLongRunAppHostLoggingClamp);
+                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Seed host started.");
+                try
                 {
-                    if (!existingFolder.IsWatched)
-                        continue;
+                    Assert.Equal(0, SQLite.SessionFactoryCreateCallCount);
 
-                    existingFolder.IsWatched = false;
-                    RepoFactory.ShokoManagedFolder.Save(existingFolder);
+                    foreach (var existingFolder in RepoFactory.ShokoManagedFolder.GetAll())
+                    {
+                        if (!existingFolder.IsWatched)
+                            continue;
+
+                        existingFolder.IsWatched = false;
+                        RepoFactory.ShokoManagedFolder.Save(existingFolder);
+                    }
+
+                    var folder = new ShokoManagedFolder
+                    {
+                        Name = $"ExistingRuntimeValid-{Guid.NewGuid():N}",
+                        Path = importDir,
+                        IsWatched = true
+                    };
+                    RepoFactory.ShokoManagedFolder.Save(folder);
+                    folderId = folder.ID;
                 }
-
-                var folder = new ShokoManagedFolder
+                finally
                 {
-                    Name = $"ExistingRuntimeValid-{Guid.NewGuid():N}",
-                    Path = importDir,
-                    IsWatched = true
-                };
-                RepoFactory.ShokoManagedFolder.Save(folder);
-                folderId = folder.ID;
+                    WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Stopping seed host.");
+                    seedHostCleanupSnapshot = await StopHostAndDrainAndCaptureAsync(seedHost);
+                    WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Seed host stopped.");
+                }
             }
-            finally
-            {
-                WriteTestProgress(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Stopping seed host.");
-                await StopHostAndDrainAsync(seedHost);
-                WriteMemorySnapshot(nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory), "Seed host stopped.");
-            }
+            Assert.NotNull(seedHostCleanupSnapshot);
+            InspectCleanupSnapshotAfterScopeDrop(
+                nameof(SQLite_EfOnlyBootstrap_ExistingDatabase_RunOnStart_ValidVideo_ReachesProcessBoundaryWithoutNhSessionFactory),
+                seedHostCleanupSnapshot!,
+                "Seed host cleanup after scope drop.");
 
             Assert.True(await EfMigrationsHistoryExistsAsync(databasePath), "Expected EF migration history to exist after the first existing-db startup.");
             Assert.True(await EfMigrationsHistoryContainsMigrationAsync(databasePath, "20260509114039_InitialCreate"), "Expected the baseline migration row to persist after the first existing-db startup.");
@@ -925,6 +941,14 @@ public class SQLiteEfOnlyBootstrapTests
 
     private static async Task StopHostAndDrainAsync(IHost host)
     {
+        var snapshot = await StopHostAndDrainAndCaptureAsync(host);
+        ForceFullGcAndReport(nameof(StopHostAndDrainAsync), "After reset.");
+        WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), snapshot.ServiceWeakReferences, "Weak-reference snapshot after forced GC.");
+        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
+    }
+
+    private static async Task<HostCleanupSnapshot> StopHostAndDrainAndCaptureAsync(IHost host)
+    {
         var serviceWeakReferences = CaptureServiceWeakReferences();
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Entering drain helper.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Initial repository cache snapshot before drain.");
@@ -996,9 +1020,15 @@ public class SQLiteEfOnlyBootstrapTests
         WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Weak-reference snapshot immediately after reset.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after reset.");
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Before forced GC after TMDB and ShokoEventHandler reset.");
-        ForceFullGcAndReport(nameof(StopHostAndDrainAsync), "After reset.");
-        WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Weak-reference snapshot after forced GC.");
-        WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
+        return new(serviceWeakReferences);
+    }
+
+    private static void InspectCleanupSnapshotAfterScopeDrop(string operationName, HostCleanupSnapshot snapshot, string message)
+    {
+        WriteMemorySnapshot(operationName, $"Before forced GC after scope drop. {message}");
+        ForceFullGcAndReport(operationName, $"After scope drop. {message}");
+        WriteWeakReferenceSnapshot(operationName, snapshot.ServiceWeakReferences, $"Weak-reference snapshot after scope drop. {message}");
+        WriteMemorySnapshot(operationName, $"Post-scope weak-reference inspection completed. {message}");
     }
 
     private static async Task<(IHost Host, SystemService SystemService, TaskCompletionSource AboutToStart)> StartServiceUntilAboutToStartAsync(
@@ -1473,6 +1503,11 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Interlocked.Exchange(ref _onDispose, null)?.Invoke();
         }
+    }
+
+    private sealed class HostCleanupSnapshot(List<(string Label, WeakReference<object> Reference)> serviceWeakReferences)
+    {
+        public List<(string Label, WeakReference<object> Reference)> ServiceWeakReferences { get; } = serviceWeakReferences;
     }
 
     private static async Task AssertProcessFileJobUsesCachedReleaseOfflineAsync(int videoLocalId)
