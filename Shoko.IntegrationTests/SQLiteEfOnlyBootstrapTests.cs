@@ -922,18 +922,31 @@ public class SQLiteEfOnlyBootstrapTests
     {
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Entering drain helper.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Initial repository cache snapshot before drain.");
+        await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Initial background state before drain.");
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing before StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "First Quartz pending-processing wait completed.");
+        await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after first Quartz wait.");
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending recurring scheduling before StopAsync.");
         await QuartzStartup.WaitForPendingRecurringSchedulingForTests().WaitAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Recurring scheduling wait completed.");
+        await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after recurring-scheduling wait.");
+        if (Utils.ServiceContainer is not null)
+        {
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var queueHandler = scope.ServiceProvider.GetRequiredService<QueueHandler>();
+            WriteTestProgress(nameof(StopHostAndDrainAsync), "Pausing queue before StopAsync.");
+            await queueHandler.Pause();
+            await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after queue pause.");
+        }
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Calling host.StopAsync.");
         await host.StopAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "host.StopAsync completed.");
+        await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state immediately after StopAsync.");
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing after StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Second Quartz pending-processing wait completed.");
+        await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after second Quartz wait.");
         switch (host)
         {
             case IAsyncDisposable asyncDisposable:
@@ -951,6 +964,7 @@ public class SQLiteEfOnlyBootstrapTests
         ResetEfOnlyTestState();
         RepoFactory.ResetTestState();
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot immediately after reset.");
+        await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after reset.");
         ForceFullGcAndReport(nameof(StopHostAndDrainAsync), "After reset.");
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
     }
@@ -1285,6 +1299,37 @@ public class SQLiteEfOnlyBootstrapTests
             return count;
 
         return -1;
+    }
+
+    private static async Task WriteBackgroundStateSnapshotAsync(string operationName, string message)
+    {
+        try
+        {
+            var pendingQuartzProcessing = QuartzExtensions.GetPendingProcessingCountForTests();
+            var pendingRecurringScheduling = QuartzStartup.GetPendingRecurringSchedulingCountForTests();
+            var serviceContainerNull = Utils.ServiceContainer is null;
+
+            string? schedulerState = null;
+            string? queueState = null;
+            if (!serviceContainerNull)
+            {
+                using var scope = Utils.ServiceContainer.CreateScope();
+                var scheduler = await scope.ServiceProvider.GetRequiredService<ISchedulerFactory>().GetScheduler();
+                var queueHandler = scope.ServiceProvider.GetRequiredService<QueueHandler>();
+                var executing = scheduler.IsShutdown ? -1 : (await scheduler.GetCurrentlyExecutingJobs()).Count;
+                schedulerState = $"schedulerStarted={scheduler.IsStarted} schedulerShutdown={scheduler.IsShutdown} schedulerStandby={scheduler.InStandbyMode} executing={executing}";
+                queueState = $"waiting={queueHandler.WaitingCount} blocked={queueHandler.BlockedCount} total={queueHandler.TotalCount}";
+            }
+
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{operationName}] BG pendingQuartzProcessing={pendingQuartzProcessing} " +
+                $"pendingRecurringScheduling={pendingRecurringScheduling} serviceContainerNull={serviceContainerNull} " +
+                $"{schedulerState ?? "scheduler=n/a"} {queueState ?? "queue=n/a"} | {message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] BG snapshot failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private static void WritePollingProgressIfDue(ref DateTime lastProgressAt, DateTime startedAt, string operationName, string message)

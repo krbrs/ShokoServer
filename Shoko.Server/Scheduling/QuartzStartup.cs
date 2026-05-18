@@ -41,6 +41,9 @@ public static class QuartzStartup
         return pending.Length is 0 ? Task.CompletedTask : Task.WhenAll(pending);
     }
 
+    internal static int GetPendingRecurringSchedulingCountForTests()
+        => _pendingRecurringScheduleTasks.Count;
+
     public static async Task ScheduleRecurringJobs(bool replace)
         => await ScheduleRecurringJobs(Utils.ServiceContainer, replace).ConfigureAwait(false);
 

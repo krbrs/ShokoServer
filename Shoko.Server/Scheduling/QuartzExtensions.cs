@@ -58,6 +58,9 @@ public static class QuartzExtensions
         return pending.Length is 0 ? Task.CompletedTask : Task.WhenAll(pending);
     }
 
+    internal static int GetPendingProcessingCountForTests()
+        => _pendingProcessTasks.Count;
+
     /// <summary>
     /// Queue a job of type T with the data map setter and generated identity
     /// </summary>
