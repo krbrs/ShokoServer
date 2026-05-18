@@ -134,6 +134,24 @@ public abstract class ConnectionHandler
         _backoffTimer.Elapsed += ResetBackoffTimer;
     }
 
+    internal (int AniDBStateUpdateCount, int BanOccurredCount, int BanExpiredCount, bool BanResetTimerEnabled, bool BackoffTimerEnabled) GetTestState()
+        => (
+            (AniDBStateUpdate as MulticastDelegate)?.GetInvocationList().Length ?? 0,
+            (BanOccurred as MulticastDelegate)?.GetInvocationList().Length ?? 0,
+            (BanExpired as MulticastDelegate)?.GetInvocationList().Length ?? 0,
+            _banResetTimer.Enabled,
+            _backoffTimer.Enabled
+        );
+
+    internal void ResetTestState()
+    {
+        _banResetTimer.Stop();
+        _backoffTimer.Stop();
+        AniDBStateUpdate = null;
+        BanOccurred = null;
+        BanExpired = null;
+    }
+
     ~ConnectionHandler()
     {
         _banResetTimer.Elapsed -= BanResetTimerElapsed;

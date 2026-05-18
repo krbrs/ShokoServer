@@ -18,6 +18,7 @@ using NLog;
 using NLog.Config;
 using Quartz;
 using Shoko.Abstractions.Core.Services;
+using Shoko.Abstractions.Metadata.Anidb.Services;
 using Shoko.Abstractions.Video.Events;
 using Shoko.Abstractions.Video.Enums;
 using Shoko.Abstractions.Video.Services;
@@ -30,6 +31,10 @@ using Shoko.Server.Scheduling;
 using Shoko.Server.Scheduling.GenericJobBuilder;
 using Shoko.Server.Scheduling.Jobs;
 using Shoko.Server.Scheduling.Jobs.Shoko;
+using Shoko.Server.Providers.AniDB;
+using Shoko.Server.Providers.AniDB.HTTP;
+using Shoko.Server.Providers.AniDB.Interfaces;
+using Shoko.Server.Providers.AniDB.UDP;
 using Shoko.Server.API.SignalR.NLog;
 using Shoko.Server.Providers.TMDB;
 using Shoko.Server;
@@ -954,6 +959,7 @@ public class SQLiteEfOnlyBootstrapTests
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Initial repository cache snapshot before drain.");
         WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Initial weak-reference snapshot before drain.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Initial background state before drain.");
+        WriteAniDbPublisherSnapshot(nameof(StopHostAndDrainAsync), "AniDB publisher snapshot before drain.");
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing before StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "First Quartz pending-processing wait completed.");
@@ -1016,6 +1022,8 @@ public class SQLiteEfOnlyBootstrapTests
         WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after TMDB reset.");
         ShokoEventHandler.ResetTestState();
         WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after ShokoEventHandler reset.");
+        ResetAniDbPublisherTestState();
+        WriteAniDbPublisherSnapshot(nameof(StopHostAndDrainAsync), "AniDB publisher snapshot after AniDB reset hook.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot immediately after reset.");
         WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Weak-reference snapshot immediately after reset.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after reset.");
@@ -1407,6 +1415,8 @@ public class SQLiteEfOnlyBootstrapTests
         CaptureWeakReference(provider, probes, "FileWatcherService", typeof(FileWatcherService));
         CaptureWeakReference(provider, probes, "IConnectivityService", typeof(Shoko.Abstractions.Connectivity.Services.IConnectivityService));
         CaptureWeakReference(provider, probes, "IAnidbService", typeof(Shoko.Abstractions.Metadata.Anidb.Services.IAnidbService));
+        CaptureWeakReference(provider, probes, "IUDPConnectionHandler", typeof(IUDPConnectionHandler));
+        CaptureWeakReference(provider, probes, "IHttpConnectionHandler", typeof(IHttpConnectionHandler));
         CaptureWeakReference(provider, probes, "TmdbMetadataService", typeof(TmdbMetadataService));
         CaptureWeakReference(provider, probes, "IVideoReleaseService", typeof(IVideoReleaseService));
         CaptureWeakReference(provider, probes, "QueueHandler", typeof(QueueHandler));
@@ -1440,6 +1450,51 @@ public class SQLiteEfOnlyBootstrapTests
         {
             Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] WEAK snapshot failed: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    private static void WriteAniDbPublisherSnapshot(string operationName, string message)
+    {
+        try
+        {
+            if (Utils.ServiceContainer is null)
+            {
+                Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] ANIDB publishers=n/a serviceContainerNull=True | {message}");
+                return;
+            }
+
+            using var scope = Utils.ServiceContainer.CreateScope();
+            var udpHandler = scope.ServiceProvider.GetRequiredService<IUDPConnectionHandler>() as AniDBUDPConnectionHandler;
+            var httpHandler = scope.ServiceProvider.GetRequiredService<IHttpConnectionHandler>() as AniDBHttpConnectionHandler;
+
+            var udpBase = udpHandler?.GetTestState();
+            var udpExtra = udpHandler?.GetUdpTestState();
+            var httpBase = httpHandler?.GetTestState();
+
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{operationName}] ANIDB " +
+                $"udp.state={udpBase?.AniDBStateUpdateCount ?? -1} udp.banOccurred={udpBase?.BanOccurredCount ?? -1} udp.banExpired={udpBase?.BanExpiredCount ?? -1} " +
+                $"udp.banTimer={udpBase?.BanResetTimerEnabled ?? false} udp.backoff={udpBase?.BackoffTimerEnabled ?? false} " +
+                $"udp.pingExists={udpExtra?.PingTimerExists ?? false} udp.pingEnabled={udpExtra?.PingTimerEnabled ?? false} " +
+                $"udp.logoutExists={udpExtra?.LogoutTimerExists ?? false} udp.logoutEnabled={udpExtra?.LogoutTimerEnabled ?? false} udp.loginFailed={udpExtra?.LoginFailedCount ?? -1} " +
+                $"http.state={httpBase?.AniDBStateUpdateCount ?? -1} http.banOccurred={httpBase?.BanOccurredCount ?? -1} http.banExpired={httpBase?.BanExpiredCount ?? -1} " +
+                $"http.banTimer={httpBase?.BanResetTimerEnabled ?? false} http.backoff={httpBase?.BackoffTimerEnabled ?? false} | {message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] ANIDB snapshot failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static void ResetAniDbPublisherTestState()
+    {
+        if (Utils.ServiceContainer is null)
+            return;
+
+        using var scope = Utils.ServiceContainer.CreateScope();
+        if (scope.ServiceProvider.GetRequiredService<IUDPConnectionHandler>() is AniDBUDPConnectionHandler udpHandler)
+            udpHandler.ResetUdpTestState();
+        if (scope.ServiceProvider.GetRequiredService<IHttpConnectionHandler>() is AniDBHttpConnectionHandler httpHandler)
+            httpHandler.ResetTestState();
     }
 
     private static int TryGetCacheCount(object? cache)
