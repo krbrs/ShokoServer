@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -16,6 +17,7 @@ using Microsoft.Extensions.Logging;
 using NLog;
 using NLog.Config;
 using Quartz;
+using Shoko.Abstractions.Core.Services;
 using Shoko.Abstractions.Video.Events;
 using Shoko.Abstractions.Video.Enums;
 using Shoko.Abstractions.Video.Services;
@@ -923,8 +925,10 @@ public class SQLiteEfOnlyBootstrapTests
 
     private static async Task StopHostAndDrainAsync(IHost host)
     {
+        var serviceWeakReferences = CaptureServiceWeakReferences();
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Entering drain helper.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Initial repository cache snapshot before drain.");
+        WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Initial weak-reference snapshot before drain.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Initial background state before drain.");
         WriteTestProgress(nameof(StopHostAndDrainAsync), "Waiting for pending Quartz processing before StopAsync.");
         await QuartzExtensions.WaitForPendingProcessingForTests().WaitAsync(TimeSpan.FromSeconds(30));
@@ -989,9 +993,11 @@ public class SQLiteEfOnlyBootstrapTests
         ShokoEventHandler.ResetTestState();
         WriteStaticRootSnapshot(nameof(StopHostAndDrainAsync), "Static root snapshot after ShokoEventHandler reset.");
         WriteRepoCacheSnapshot(nameof(StopHostAndDrainAsync), "Repository cache snapshot immediately after reset.");
+        WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Weak-reference snapshot immediately after reset.");
         await WriteBackgroundStateSnapshotAsync(nameof(StopHostAndDrainAsync), "Background state after reset.");
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Before forced GC after TMDB and ShokoEventHandler reset.");
         ForceFullGcAndReport(nameof(StopHostAndDrainAsync), "After reset.");
+        WriteWeakReferenceSnapshot(nameof(StopHostAndDrainAsync), serviceWeakReferences, "Weak-reference snapshot after forced GC.");
         WriteMemorySnapshot(nameof(StopHostAndDrainAsync), "Drain helper completed.");
     }
 
@@ -1353,6 +1359,56 @@ public class SQLiteEfOnlyBootstrapTests
         catch (Exception ex)
         {
             Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] ROOTS snapshot failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static List<(string Label, WeakReference<object> Reference)> CaptureServiceWeakReferences()
+    {
+        var probes = new List<(string Label, WeakReference<object> Reference)>();
+        if (Utils.ServiceContainer is null)
+            return probes;
+
+        using var scope = Utils.ServiceContainer.CreateScope();
+        var provider = scope.ServiceProvider;
+
+        CaptureWeakReference(provider, probes, "ISystemService", typeof(ISystemService));
+        CaptureWeakReference(provider, probes, "IPluginManager", typeof(Shoko.Abstractions.Plugin.IPluginManager));
+        CaptureWeakReference(provider, probes, "IVideoService", typeof(IVideoService));
+        CaptureWeakReference(provider, probes, "FileWatcherService", typeof(FileWatcherService));
+        CaptureWeakReference(provider, probes, "IConnectivityService", typeof(Shoko.Abstractions.Connectivity.Services.IConnectivityService));
+        CaptureWeakReference(provider, probes, "IAnidbService", typeof(Shoko.Abstractions.Metadata.Anidb.Services.IAnidbService));
+        CaptureWeakReference(provider, probes, "TmdbMetadataService", typeof(TmdbMetadataService));
+        CaptureWeakReference(provider, probes, "IVideoReleaseService", typeof(IVideoReleaseService));
+        CaptureWeakReference(provider, probes, "QueueHandler", typeof(QueueHandler));
+        CaptureWeakReference(provider, probes, "JobFactory", typeof(JobFactory));
+        CaptureWeakReference(provider, probes, "ThreadPooledJobStore", typeof(ThreadPooledJobStore));
+
+        return probes;
+    }
+
+    private static void CaptureWeakReference(IServiceProvider provider, List<(string Label, WeakReference<object> Reference)> probes, string label, Type serviceType)
+    {
+        var service = provider.GetService(serviceType);
+        if (service is null)
+            return;
+
+        probes.Add((label, new(service)));
+    }
+
+    private static void WriteWeakReferenceSnapshot(string operationName, List<(string Label, WeakReference<object> Reference)> probes, string message)
+    {
+        try
+        {
+            var states = probes
+                .Select(probe => $"{probe.Label}={(probe.Reference.TryGetTarget(out _) ? "alive" : "collected")}")
+                .ToList();
+
+            Console.WriteLine(
+                $"[{DateTime.UtcNow:O}] [{operationName}] WEAK count={probes.Count} {string.Join(", ", states)} | {message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:O}] [{operationName}] WEAK snapshot failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
